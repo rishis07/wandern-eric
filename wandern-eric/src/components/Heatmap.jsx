@@ -27,7 +27,7 @@ export default function Heatmap() {
                 tooltipDataAttrs={(value) => ({
                     "data-tooltip-id": "walking-heatmap-tooltip",
                     "data-tooltip-content": value.date
-                        ? `${value.date}: ${value.count} walks`
+                        ? `${value.date}: ${value.count} steps`
                         : "No data",
                 })}
                 showWeekdayLabels={true}
