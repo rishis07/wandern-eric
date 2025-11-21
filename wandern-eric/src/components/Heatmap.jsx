@@ -17,10 +17,12 @@ export default function Heatmap() {
                 values={data} // use imported JSON
                 classForValue={(value) => {
                     if (!value) return "color-scale-0";
-                    if (value.count <= 2500) return "color-scale-1";
-                    if (value.count <= 5000) return "color-scale-2";
-                    if (value.count < 10000) return "color-scale-3";
-                    if (value.count >= 10000) return "color-scale-4";
+                    if (value.count <= 1000) return "color-scale-1";
+                    if (value.count <= 2500) return "color-scale-2";
+                    if (value.count <= 5000) return "color-scale-3";
+                    if (value.count <= 7500) return "color-scale-4";
+                    if (value.count < 10000) return "color-scale-5";
+                    if (value.count >= 10000) return "color-scale-6";
                 }}
                 tooltipDataAttrs={(value) => ({
                     "data-tooltip-id": "walking-heatmap-tooltip",

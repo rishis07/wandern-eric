@@ -41,17 +41,25 @@ h1 {
 }
 
 .color-scale-1 {
-  fill: #c6e48b;
+  fill: #fccac2;
 }
 
 .color-scale-2 {
-  fill: #7bc96f;
+  fill: #fbeae7;
 }
 
 .color-scale-3 {
-  fill: #239a3b;
+  fill: #c6e48b;
 }
 
 .color-scale-4 {
+  fill: #7bc96f;
+}
+
+.color-scale-5 {
+  fill: #239a3b;
+}
+
+.color-scale-6 {
   fill: #196127;
 }
