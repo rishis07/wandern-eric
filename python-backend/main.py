@@ -11,6 +11,9 @@ import json
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
 
+ROOT_DIR = Path(__file__).parent
+TOKEN_PATH = ROOT_DIR / "token.json"
+
 # Replace with your Fitbit app details
 CLIENT_ID = os.getenv("CLIENT_ID") 
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")  
@@ -22,6 +25,21 @@ TOKEN_URL = os.getenv("TOKEN_URL")
 
 # Scopes determine what data you can read
 SCOPES = ["activity", "cardio_fitness", "location", "heartrate", "sleep", "profile"]
+
+
+def get_file_from_gcp(bucket_name, blob_name):
+    project = os.getenv("GCP_PROJECT_ID")
+    storage_client = storage.Client(project=project)
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    if not blob.exists():
+        return []
+
+    data_bytes = blob.download_as_bytes()
+    data_str = data_bytes.decode('utf-8')
+    data = json.loads(data_str)
+    return data
 
 # GCP logic
 def upload_file_to_gcp(bucket_name, destination_blob_name, local_path):
@@ -35,13 +53,13 @@ def upload_file_to_gcp(bucket_name, destination_blob_name, local_path):
     print(f"Uploaded file {local_path} → gs://{bucket_name}/{destination_blob_name}")
 
 def save_token(token):
-    with open("token.json", "w") as f:
+    with open(TOKEN_PATH, "w") as f:
         json.dump(token, f)
 
 
 def load_token():
-    if os.path.exists("token.json"):
-        with open("token.json") as f:
+    if TOKEN_PATH.exists():
+        with open(TOKEN_PATH) as f:
             return json.load(f)
     return None
 
@@ -49,7 +67,6 @@ def load_token():
 def get_fitbit_session():
     saved_token = load_token()
 
-    # If we have a token already — use it (it will auto-refresh)
     if saved_token:
         return OAuth2Session(
             CLIENT_ID,
@@ -84,37 +101,33 @@ def get_fitbit_session():
 
 
 if __name__ == "__main__":
-    fitbit = get_fitbit_session()
-
-    # yesterday
     yesterday = datetime.date.today() - datetime.timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y-%m-%d")
     print(f"Fetching data for: {yesterday_str}")
     
+    # Get data from fitbit
+    fitbit = get_fitbit_session()
     resp = fitbit.get(f"https://api.fitbit.com/1/user/-/activities/date/{yesterday_str}.json")
     steps = resp.json()['summary']['steps']
     sedentary_mins = resp.json()['summary']['sedentaryMinutes']
 
     record = {'date': yesterday_str, 'count': steps, 'sedentary_minutes': sedentary_mins}
 
-    # update data.json file with the new record
-    ROOT_DIR = Path(__file__).parent.parent.resolve()
+    print(f"Fetched data: {record}")
+    # download from GCP
+    bucket_name = os.getenv("GCP_BUCKET_NAME")
+    destination_blob_name = 'data.json'
+    data = get_file_from_gcp(bucket_name, destination_blob_name)
+    
+    if data is None:
+        raise ValueError("Failed to load data from GCP")
+    
+    data.append(record)
 
-    data_path = ROOT_DIR / 'wandern-eric/src/data/data.json'
-
-    if data_path.exists():
-        with open(data_path, 'r') as f:
-            data = json.load(f)
-        
-        # data.append(record)
-
-        with open(ROOT_DIR / 'wandern-eric/src/data2.json', 'w') as f:
-            json.dump(data, f, indent=4)
-        
-        # upload to GCP
-        bucket_name = os.getenv("GCP_BUCKET_NAME")
-        destination_blob_name = 'data.json'
-        upload_file_to_gcp(bucket_name, destination_blob_name, str(data_path))
-
-    else:
-        print(f"{data_path} does not exist.")
+    # save locally
+    data_path = ROOT_DIR / "data.json"
+    with open(data_path, "w") as f:
+        json.dump(data, f)
+    
+    # upload to GCP
+    upload_file_to_gcp(bucket_name, destination_blob_name, str(data_path))
