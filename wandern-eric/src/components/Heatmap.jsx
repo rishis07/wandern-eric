@@ -38,8 +38,6 @@ export default function Heatmap() {
 
     return (
         <div className="bg-white p-6 rounded-xl shadow">
-            <h2 className="text-xl font-semibold mb-4">Daily Walking Activity</h2>
-
             <CalendarHeatmap
                 startDate={new Date(today.getFullYear(), 0, 1)}
                 endDate={today}
