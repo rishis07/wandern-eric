@@ -6,6 +6,7 @@ import datetime
 import webbrowser
 import os
 import json
+import pandas as pd
 
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     yesterday = datetime.date.today() - datetime.timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y-%m-%d")
     print(f"Fetching data for: {yesterday_str}")
-    
+
     # Get data from fitbit
     fitbit = get_fitbit_session()
     resp = fitbit.get(f"https://api.fitbit.com/1/user/-/activities/date/{yesterday_str}.json")
@@ -114,6 +115,7 @@ if __name__ == "__main__":
     record = {'date': yesterday_str, 'count': steps, 'sedentary_minutes': sedentary_mins}
 
     print(f"Fetched data: {record}")
+
     # download from GCP
     bucket_name = os.getenv("GCP_BUCKET_NAME")
     destination_blob_name = 'data.json'
@@ -128,6 +130,43 @@ if __name__ == "__main__":
     data_path = ROOT_DIR / "data.json"
     with open(data_path, "w") as f:
         json.dump(data, f)
+
+    ROOT_DIR / "data.json"
+
+    df = pd.read_json('data.json')
+
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # aggregations
+    aggregations = {}
+
+    # Day with the highest count
+    max_count = df[df['count'].max() == df['count']]
+    # date to string
+    max_count['date'] = max_count['date'].dt.strftime('%Y-%m-%d')
+    aggregations["max_steps"] = max_count[["date", "count"]].to_dict(orient='records')[0]
+
+    # Max AVG Day of the week
+    df['day_of_week'] = df['date'].dt.day_name()
+    avg_by_day = df.groupby('day_of_week').agg({
+        'count': 'mean',
+    }).reset_index()
+    aggregations["max_avg_dow"] = avg_by_day[avg_by_day['count'].max() == avg_by_day['count']].to_dict(orient='records')[0]
+
+    # avg per month
+    df['month'] = df['date'].dt.month_name()
+    avg_by_month = df.groupby('month').agg({
+        'count': 'mean',
+    }).reset_index()
+    aggregations['avg_per_month'] = avg_by_month.to_dict(orient='records')
+
+    # save locally
+    agg_path = ROOT_DIR / "aggregations.json"
+
+    with open(agg_path, "w") as f:
+        json.dump(aggregations, f)
+
     
     # upload to GCP
     upload_file_to_gcp(bucket_name, destination_blob_name, str(data_path))
+    upload_file_to_gcp(bucket_name, 'aggregations.json', str(agg_path))
