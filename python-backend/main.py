@@ -1,4 +1,5 @@
 from requests_oauthlib import OAuth2Session
+from requests.auth import HTTPBasicAuth
 from google.cloud import storage
 from pathlib import Path
 from dotenv import load_dotenv
@@ -53,91 +54,12 @@ def upload_file_to_gcp(bucket_name, destination_blob_name, local_path):
 
     print(f"Uploaded file {local_path} → gs://{bucket_name}/{destination_blob_name}")
 
-def save_token(token):
-    with open(TOKEN_PATH, "w") as f:
-        json.dump(token, f)
 
-
-def load_token():
-    if TOKEN_PATH.exists():
-        with open(TOKEN_PATH) as f:
-            return json.load(f)
-    return None
-
-
-def get_fitbit_session():
-    saved_token = load_token()
-
-    if saved_token:
-        return OAuth2Session(
-            CLIENT_ID,
-            token=saved_token,
-            auto_refresh_url=TOKEN_URL,
-            auto_refresh_kwargs={
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-            },
-            token_updater=save_token,
-        )
-
-    # First-time authorization
-    fitbit = OAuth2Session(
-        CLIENT_ID, redirect_uri=REDIRECT_URI, scope=SCOPES
-    )
-
-    authorization_url, state = fitbit.authorization_url(AUTH_URL)
-    print("Open this URL to authorize:", authorization_url)
-    webbrowser.open(authorization_url)
-
-    redirect_response = input("Paste full redirect URL: ")
-
-    token = fitbit.fetch_token(
-        TOKEN_URL,
-        client_secret=CLIENT_SECRET,
-        authorization_response=redirect_response,
-    )
-
-    save_token(token)
-    return fitbit
-
-
-if __name__ == "__main__":
-    yesterday = datetime.date.today() - datetime.timedelta(days=1)
-    yesterday_str = yesterday.strftime("%Y-%m-%d")
-    print(f"Fetching data for: {yesterday_str}")
-
-    # Get data from fitbit
-    fitbit = get_fitbit_session()
-    resp = fitbit.get(f"https://api.fitbit.com/1/user/-/activities/date/{yesterday_str}.json")
-    steps = resp.json()['summary']['steps']
-    sedentary_mins = resp.json()['summary']['sedentaryMinutes']
-
-    record = {'date': yesterday_str, 'count': steps, 'sedentary_minutes': sedentary_mins}
-
-    print(f"Fetched data: {record}")
-
-    # download from GCP
-    bucket_name = os.getenv("GCP_BUCKET_NAME")
-    destination_blob_name = 'data.json'
-    data = get_file_from_gcp(bucket_name, destination_blob_name)
-    
-    if data is None:
-        raise ValueError("Failed to load data from GCP")
-    
-    data.append(record)
-
-    # save locally
-    data_path = ROOT_DIR / "data.json"
-    with open(data_path, "w") as f:
-        json.dump(data, f)
-
-    ROOT_DIR / "data.json"
-
-    df = pd.read_json('data.json')
-
+def calculate_aggregations(data_path: Path):
+    df = pd.read_json(data_path)
     df['date'] = pd.to_datetime(df['date'])
-    
-    # aggregations
+
+
     aggregations = {}
 
     # Day with the highest count
@@ -160,13 +82,107 @@ if __name__ == "__main__":
     }).reset_index()
     aggregations['avg_per_month'] = avg_by_month.to_dict(orient='records')
 
+    return aggregations
+
+
+class FitbitController:
+    def __init__(self):
+        self.session = self.__get_session()
+
+    def __save_token(self, token):
+        with open(TOKEN_PATH, "w") as f:
+            json.dump(token, f)
+
+    def __get_session(self):
+        # load token
+        if TOKEN_PATH.exists():
+            with open(TOKEN_PATH) as f:
+                saved_token = json.load(f)
+
+
+        if saved_token:
+            client = OAuth2Session(
+                CLIENT_ID,
+                token=saved_token,
+                auto_refresh_url=TOKEN_URL,
+                auto_refresh_kwargs={
+                    "client_id": CLIENT_ID,
+                    "client_secret": CLIENT_SECRET,
+                },
+                token_updater=self.__save_token,
+            )
+            auth = HTTPBasicAuth(CLIENT_ID, CLIENT_SECRET)
+            client.auth = auth
+            
+            return client
+
+        # First-time authorization
+        fitbit = OAuth2Session(
+            CLIENT_ID, redirect_uri=REDIRECT_URI, scope=SCOPES
+        )
+
+        authorization_url, state = fitbit.authorization_url(AUTH_URL)
+        print("Open this URL to authorize:", authorization_url)
+        webbrowser.open(authorization_url)
+
+        redirect_response = input("Paste full redirect URL: ")
+
+        token = fitbit.fetch_token(
+            TOKEN_URL,
+            client_secret=CLIENT_SECRET,
+            authorization_response=redirect_response,
+        )
+
+        # save token
+        self.__save_token(token)
+
+        return fitbit
+
+    def get_daily_steps(self, date_str):
+        resp = self.session.get(f"https://api.fitbit.com/1/user/-/activities/date/{date_str}.json")
+        if resp.status_code != 200:
+            raise ValueError(f"Error fetching data: {resp.status_code} - {resp.text}")
+        steps = resp.json()['summary']['steps']
+        sedentary_mins = resp.json()['summary']['sedentaryMinutes']
+
+        record = {'date': yesterday_str, 'count': steps, 'sedentary_minutes': sedentary_mins}
+        return record 
+
+
+if __name__ == "__main__":
+    yesterday = datetime.date.today() - datetime.timedelta(days=1)
+    yesterday_str = yesterday.strftime("%Y-%m-%d")
+    print(f"Fetching data for: {yesterday_str}")
+
+    # Get data from fitbit
+    fitbit_controller = FitbitController()
+    record = fitbit_controller.get_daily_steps(yesterday_str)
+    print(f"Fetched data: {record}")
+
+    # download from GCP
+    bucket_name = os.getenv("GCP_BUCKET_NAME")
+    destination_blob_name = 'data.json'
+    data = get_file_from_gcp(bucket_name, destination_blob_name)
+    
+    if data is None:
+        raise ValueError("Failed to load data from GCP")
+    
+    data.append(record)
+
+    # save locally
+    data_path = ROOT_DIR / "data.json"
+    with open(data_path, "w") as f:
+        json.dump(data, f)
+    
+    # aggregations
+    aggregations = calculate_aggregations(data_path)
+
     # save locally
     agg_path = ROOT_DIR / "aggregations.json"
 
     with open(agg_path, "w") as f:
         json.dump(aggregations, f)
 
-    
     # upload to GCP
     upload_file_to_gcp(bucket_name, destination_blob_name, str(data_path))
     upload_file_to_gcp(bucket_name, 'aggregations.json', str(agg_path))
