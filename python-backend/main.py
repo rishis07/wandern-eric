@@ -89,7 +89,6 @@ class FitbitController:
         self.session = self.__get_session()
 
     def __save_token(self, token):
-        print("Saving token...")
         token["expires_at"] = datetime.datetime.now().timestamp() + token["expires_in"]
         with open(TOKEN_PATH, "w") as f:
             json.dump(token, f)
@@ -187,7 +186,7 @@ if __name__ == "__main__":
     fitbit_controller = FitbitController()
     record = fitbit_controller.get_daily_steps(yesterday_str)
     print(f"Fetched data: {record}")
-    """
+
     # download from GCP
     bucket_name = os.getenv("GCP_BUCKET_NAME")
     destination_blob_name = 'data.json'
@@ -215,4 +214,3 @@ if __name__ == "__main__":
     # upload to GCP
     upload_file_to_gcp(bucket_name, destination_blob_name, str(data_path))
     upload_file_to_gcp(bucket_name, 'aggregations.json', str(agg_path))
-    """
