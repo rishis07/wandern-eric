@@ -1,5 +1,4 @@
 from requests_oauthlib import OAuth2Session
-from requests.auth import HTTPBasicAuth
 from google.cloud import storage
 from pathlib import Path
 from dotenv import load_dotenv
@@ -90,8 +89,34 @@ class FitbitController:
         self.session = self.__get_session()
 
     def __save_token(self, token):
+        print("Saving token...")
+        token["expires_at"] = datetime.datetime.now().timestamp() + token["expires_in"]
         with open(TOKEN_PATH, "w") as f:
             json.dump(token, f)
+
+    def __get_refresh_token(self, token):
+        import requests
+        import base64
+
+        url = "https://api.fitbit.com/oauth2/token"
+
+        auth_string = f"{CLIENT_ID}:{CLIENT_SECRET}"
+        auth_header = base64.b64encode(auth_string.encode()).decode()
+
+        headers = {
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        data_request = {
+            "grant_type": "refresh_token",
+            "client_id": f"{CLIENT_ID}",
+            "refresh_token": f'{token["refresh_token"]}',
+        }
+
+        response = requests.post(url, headers=headers, data=data_request)
+
+        return response.json()
 
     def __get_session(self):
         # load token
@@ -99,22 +124,26 @@ class FitbitController:
             with open(TOKEN_PATH) as f:
                 saved_token = json.load(f)
 
+            if saved_token:
+                # check token is not expired
+                if saved_token['expires_at'] <= datetime.datetime.now().timestamp():
+                    print("Token expired, refreshing...")
+                    saved_token = self.__get_refresh_token(saved_token)
+                    self.__save_token(saved_token)
+                    print("Token refreshed.")
 
-        if saved_token:
-            client = OAuth2Session(
-                CLIENT_ID,
-                token=saved_token,
-                auto_refresh_url=TOKEN_URL,
-                auto_refresh_kwargs={
-                    "client_id": CLIENT_ID,
-                    "client_secret": CLIENT_SECRET,
-                },
-                token_updater=self.__save_token,
-            )
-            auth = HTTPBasicAuth(CLIENT_ID, CLIENT_SECRET)
-            client.auth = auth
-            
-            return client
+                client = OAuth2Session(
+                    CLIENT_ID,
+                    token=saved_token,
+                    auto_refresh_url=TOKEN_URL,
+                    auto_refresh_kwargs={
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
+                    },
+                    token_updater=self.__save_token,
+                )
+                
+                return client
 
         # First-time authorization
         fitbit = OAuth2Session(
@@ -158,7 +187,7 @@ if __name__ == "__main__":
     fitbit_controller = FitbitController()
     record = fitbit_controller.get_daily_steps(yesterday_str)
     print(f"Fetched data: {record}")
-
+    """
     # download from GCP
     bucket_name = os.getenv("GCP_BUCKET_NAME")
     destination_blob_name = 'data.json'
@@ -186,3 +215,4 @@ if __name__ == "__main__":
     # upload to GCP
     upload_file_to_gcp(bucket_name, destination_blob_name, str(data_path))
     upload_file_to_gcp(bucket_name, 'aggregations.json', str(agg_path))
+    """
