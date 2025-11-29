@@ -32,15 +32,34 @@ export default function Heatmap() {
             </div>
         );
     }
+    const current = parseInt(data.prev_month_avg_to_eom_projection.current_month);
+    const prev_month = parseInt(data.prev_month_avg_to_eom_projection.last_month);
+    const step_goal = 10000;
+    const indicatorMsg = current < prev_month ? `Extra ${Math.abs(current)} steps per day compared to last months!` : `Missing ${current} steps to reach last month avg`;
+    let BgAlertColor;
+
+    if (current < prev_month) {
+        BgAlertColor = "bg-green-400";
+    } else if (current > prev_month * 1.75) {
+        BgAlertColor = "bg-red-400";
+    } else {
+        BgAlertColor = "bg-blue-400";
+    }
 
     return (
-        // Cards for each aggregation type (max steps, avg dow, avg per month)
-        <div className="bg-white p-6 text-center rounded-xl shadow grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-6 text-center rounded-xl shadow grid grid-cols-1 md:grid-cols-3 gap-4" >
+            {today.getDate() >= 20 && current > -10000 && (
+                <div className={`${BgAlertColor} p-4 rounded-lg md:col-span-3`}>
+                    <p className="text-l font-bold">{indicatorMsg}</p>
+                    <p className="text-l font-bold">Last Month Avg: {prev_month}</p>
+                </div>
+            )}
             <div className="bg-blue-400 p-4 rounded-lg">
                 <h3 className="text-lg font-semibold mb-2">Max Steps</h3>
                 <p className="text-2xl font-bold">{data.max_steps.date}</p>
                 <p className="text-2xl font-bold">{data.max_steps.count}</p>
             </div>
+
             <div className="bg-blue-400 p-4 rounded-lg">
                 <h3 className="text-lg font-semibold mb-2">Max avg Day of the week</h3>
                 <p className="text-2xl font-bold">{data.max_avg_dow.day_of_week}</p>
