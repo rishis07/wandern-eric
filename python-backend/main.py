@@ -75,6 +75,7 @@ def calculate_aggregations(data_path: Path):
     # Day with the highest count
     max_count = df[df['count'].max() == df['count']]
     # date to string
+    max_count = max_count.copy()
     max_count['date'] = max_count['date'].dt.strftime('%Y-%m-%d')
     aggregations["max_steps"] = max_count[["date", "count"]].to_dict(orient='records')[0]
 
@@ -124,7 +125,10 @@ def calculate_aggregations(data_path: Path):
     required_total_steps = avg_prev * days_in_month
     remaining_steps = required_total_steps - steps_so_far
 
-    steps_per_day_needed = remaining_steps / days_left
+    if days_left <= 0:
+        steps_per_day_needed = 0
+    else:
+        steps_per_day_needed = remaining_steps / days_left
 
     aggregations['prev_month_avg_to_eom_projection'] = {
         'last_month': avg_prev,
@@ -231,13 +235,13 @@ def update_and_save_fitbit_data(data_path: Path):
     fitbit_controller = FitbitController()
     record = fitbit_controller.get_daily_steps(yesterday_str)
     print(f"Fetched data: {record}")
-
+    
     # download from GCP
     data = get_file_from_gcp(GCP_BUCKET_NAME, GCP_DATA_BLOB_NAME)
     
     if data is None:
         raise ValueError("Failed to load data from GCP")
-    
+
     data.append(record)
 
     # save locally
@@ -262,7 +266,7 @@ if __name__ == "__main__":
 
     with open(agg_path, "w") as f:
         json.dump(aggregations, f)
-
+    
     # upload to GCP
     upload_file_to_gcp(GCP_BUCKET_NAME, GCP_DATA_BLOB_NAME, str(data_path))
     upload_file_to_gcp(GCP_BUCKET_NAME, GCP_AGG_BLOB_NAME, str(agg_path))
