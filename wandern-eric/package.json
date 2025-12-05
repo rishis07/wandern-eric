@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "http://rishis07.github.io/wandern-eric",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
