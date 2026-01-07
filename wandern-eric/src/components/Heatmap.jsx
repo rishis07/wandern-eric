@@ -8,6 +8,9 @@ export default function Heatmap() {
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
 
+    const pastDate = new Date(new Date().setDate(new Date().getDate() - 365));
+
+
     useEffect(() => {
         fetch("https://storage.googleapis.com/wandern-eric-data/data.json")
             .then((res) => {
@@ -39,7 +42,7 @@ export default function Heatmap() {
     return (
         <div className="bg-white p-6 rounded-xl shadow">
             <CalendarHeatmap
-                startDate={new Date(today.getFullYear(), 0, 1)}
+                startDate={pastDate}
                 endDate={today}
                 values={data}
                 classForValue={(value) => {
