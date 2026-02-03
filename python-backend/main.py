@@ -87,11 +87,18 @@ def calculate_aggregations(data_path: Path):
     aggregations["max_avg_dow"] = avg_by_day[avg_by_day['count'].max() == avg_by_day['count']].to_dict(orient='records')[0]
 
     # avg per month
+    df['month_num'] = df['date'].dt.month
     df['month'] = df['date'].dt.month_name()
     df['year'] = df['date'].dt.year
-    avg_by_month = df.groupby(['year','month']).agg({
-        'count': 'mean',
-    }).reset_index()
+
+    avg_by_month = (
+        df 
+        .groupby(['year', 'month', 'month_num'], as_index=False)
+        .agg({'count': 'mean'})
+        .sort_values(['year', 'month_num'], ascending=[False, False])
+        .drop(columns='month_num')
+    )
+
     aggregations['avg_per_month'] = avg_by_month.to_dict(orient='records')
 
 
