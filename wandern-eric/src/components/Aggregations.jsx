@@ -1,5 +1,15 @@
 import React, { useEffect, useState } from "react";
 
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+} from "recharts";
+
 export default function Heatmap() {
     const today = new Date();
     const [data, setData] = useState(null);
@@ -47,33 +57,66 @@ export default function Heatmap() {
     }
 
     return (
-        <div className="bg-white p-6 text-center rounded-xl shadow grid grid-cols-1 md:grid-cols-3 gap-4" >
-            {today.getDate() >= 20 && current > -10000 && (
-                <div className={`${BgAlertColor} p-4 rounded-lg md:col-span-3`}>
-                    <p className="text-l font-bold">{indicatorMsg}</p>
-                    <p className="text-l font-bold">Last Month Avg: {prev_month}</p>
-                </div>
-            )}
-            <div className="bg-blue-400 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold mb-2">Max Steps</h3>
-                <p className="text-2xl font-bold">{data.max_steps.date}</p>
-                <p className="text-2xl font-bold">{data.max_steps.count}</p>
-            </div>
+        <div className="aggregations">
+            <div className="mx-auto mt-5">
+                <div className="bg-white p-6 text-center rounded-xl shadow grid grid-cols-1 md:grid-cols-3 gap-4" >
+                    {today.getDate() >= 20 && current > -10000 && (
+                        <div className={`${BgAlertColor} p-4 rounded-lg md:col-span-3`}>
+                            <p className="text-l font-bold">{indicatorMsg}</p>
+                            <p className="text-l font-bold">Last Month Avg: {prev_month}</p>
+                        </div>
+                    )}
+                    <div className="bg-blue-400 p-4 rounded-lg">
+                        <h3 className="text-lg font-semibold mb-2">Max Steps</h3>
+                        <p className="text-2xl font-bold">{data.max_steps.date}</p>
+                        <p className="text-2xl font-bold">{data.max_steps.count}</p>
+                    </div>
 
-            <div className="bg-blue-400 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold mb-2">Max avg Day of the week</h3>
-                <p className="text-2xl font-bold">{data.max_avg_dow.day_of_week}</p>
-                <p className="text-2xl font-bold">{data.max_avg_dow.count.toFixed(0)}</p>
+                    <div className="bg-blue-400 p-4 rounded-lg">
+                        <h3 className="text-lg font-semibold mb-2">Max avg Day of the week</h3>
+                        <p className="text-2xl font-bold">{data.max_avg_dow.day_of_week}</p>
+                        <p className="text-2xl font-bold">{data.max_avg_dow.count.toFixed(0)}</p>
+                    </div>
+                    <div className="bg-blue-400 p-4 rounded-lg">
+                        <h3 className="text-lg font-semibold mb-2">Average Steps per last 3 Months</h3>
+                        <ul>
+                            {data.avg_last_3_months.map((monthData) => (
+                                <li key={monthData.month} className="text-2xl font-bold">
+                                    {monthData.month}: {monthData.count.toFixed(0)}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
             </div>
-            <div className="bg-blue-400 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold mb-2">Average Steps per Month</h3>
-                <ul>
-                    {data.avg_per_month.map((monthData) => (
-                        <li key={monthData.month} className="text-2xl font-bold">
-                            {monthData.month}: {monthData.count.toFixed(0)}
-                        </li>
-                    ))}
-                </ul>
+            <div className="mx-auto mt-5">
+                <div className="bg-white p-6 rounded-xl shadow">
+                    <h3 className="text-lg font-semibold mb-4 text-blue-400 text-center">
+                        Average Steps Per Month Trend
+                    </h3>
+
+                    <div style={{ width: "100%", height: 300 }} text-blue-400>
+                        <ResponsiveContainer>
+                            <LineChart data={data.avg_per_month}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="month" />
+                                <YAxis />
+                                <Tooltip
+                                    labelStyle={{
+                                        color: "#60a5fa",   // blue-400
+                                        fontWeight: 600
+                                    }}
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="count"
+                                    stroke="#3b82f6"
+                                    strokeWidth={3}
+                                />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
             </div>
         </div>
     );

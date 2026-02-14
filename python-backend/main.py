@@ -95,11 +95,19 @@ def calculate_aggregations(data_path: Path):
         df 
         .groupby(['year', 'month', 'month_num'], as_index=False)
         .agg({'count': 'mean'})
-        .sort_values(['year', 'month_num'], ascending=[False, False])
-        .drop(columns='month_num')
+        .sort_values(['year', 'month_num'])
     )
 
+    avg_by_month["count"] = avg_by_month["count"].astype(int)
+
     aggregations['avg_per_month'] = avg_by_month.to_dict(orient='records')
+
+    # avg last 3 months
+    aggregations['avg_last_3_months'] = (
+        avg_by_month
+        .sort_values(['year', 'month_num'], ascending=[False, False])
+        .head(3).to_dict(orient='records')
+    )
 
 
     # steps per day needed to continue last month avg
@@ -138,8 +146,8 @@ def calculate_aggregations(data_path: Path):
         steps_per_day_needed = remaining_steps / days_left
 
     aggregations['prev_month_avg_to_eom_projection'] = {
-        'last_month': avg_prev,
-        'current_month': steps_per_day_needed
+        'last_month': int(avg_prev),
+        'current_month': int(steps_per_day_needed)
     }
 
     return aggregations
