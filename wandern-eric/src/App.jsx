@@ -1,5 +1,6 @@
 import Heatmap from "./components/Heatmap";
 import Aggregations from "./components/Aggregations";
+import Changelog from "./components/Changelog";
 
 export default function App() {
   return (
@@ -12,6 +13,10 @@ export default function App() {
 
       <div className="mx-auto mt-5">
         <Aggregations />
+      </div>
+
+      <div className="mx-auto mt-5">
+        <Changelog />
       </div>
     </div>
   );

@@ -12,14 +12,28 @@ export default function Heatmap() {
 
 
     useEffect(() => {
-        fetch("https://storage.googleapis.com/wandern-eric-data/data.json")
-            .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Failed to load heatmap data");
+        const base = "https://storage.googleapis.com/wandern-eric-data";
+
+        // Finalized days (required) + today's in-progress record (optional).
+        const historicalReq = fetch(`${base}/data.json`).then((res) => {
+            if (!res.ok) throw new Error("Failed to load heatmap data");
+            return res.json();
+        });
+
+        // today.json may not exist yet (e.g. overnight); treat any failure as "no today".
+        const todayReq = fetch(`${base}/today.json`)
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null);
+
+        Promise.all([historicalReq, todayReq])
+            .then(([historical, today]) => {
+                const byDate = new Map(historical.map((d) => [d.date, d]));
+                // Finalized data always wins; only add today if it isn't finalized yet.
+                if (today && !byDate.has(today.date)) {
+                    byDate.set(today.date, today);
                 }
-                return res.json();
+                setData(Array.from(byDate.values()));
             })
-            .then((json) => setData(json))
             .catch((err) => setError(err.message));
     }, []);
 
@@ -47,17 +61,20 @@ export default function Heatmap() {
                 values={data}
                 classForValue={(value) => {
                     if (!value) return "color-scale-0";
-                    if (value.count <= 1000) return "color-scale-1";
-                    if (value.count <= 2500) return "color-scale-2";
-                    if (value.count <= 5000) return "color-scale-3";
-                    if (value.count <= 7500) return "color-scale-4";
-                    if (value.count < 10000) return "color-scale-5";
-                    if (value.count >= 10000) return "color-scale-6";
+                    let scale;
+                    if (value.count <= 1000) scale = "color-scale-1";
+                    else if (value.count <= 2500) scale = "color-scale-2";
+                    else if (value.count <= 5000) scale = "color-scale-3";
+                    else if (value.count <= 7500) scale = "color-scale-4";
+                    else if (value.count < 10000) scale = "color-scale-5";
+                    else scale = "color-scale-6";
+                    // mark today's still-in-progress cell so it stands out
+                    return value.intraday ? `${scale} color-scale-intraday` : scale;
                 }}
                 tooltipDataAttrs={(value) => ({
                     "data-tooltip-id": "walking-heatmap-tooltip",
                     "data-tooltip-content": value.date
-                        ? `${value.date}: ${value.count} steps`
+                        ? `${value.date}: ${value.count} steps${value.intraday ? " (so far today)" : ""}`
                         : "No data",
                 })}
                 showWeekdayLabels={true}

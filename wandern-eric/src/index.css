@@ -63,3 +63,9 @@ h1 {
 .color-scale-6 {
   fill: #196127;
 }
+
+/* today's in-progress cell: keep its fill scale, add a blue outline so it pops */
+.color-scale-intraday {
+  stroke: #3b82f6;
+  stroke-width: 2px;
+}
