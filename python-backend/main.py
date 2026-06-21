@@ -302,8 +302,9 @@ def run_intraday():
 
     Meant for the hourly cron run (8am–11pm). today.json holds a single record.
     """
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
-    print(f"[intraday] Fetching in-progress data for: {today_str}")
+    now = datetime.datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    print(f"[intraday] {now:%Y-%m-%d %H:%M} Fetching in-progress data for: {today_str}")
 
     controller = GoogleHealthController()
     record = controller.get_daily_steps(today_str)
