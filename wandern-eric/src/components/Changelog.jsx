@@ -8,6 +8,8 @@ const CHANGES = [
         items: [
             "🤖 Claude joined the team!",
             "Added intra-day step tracking — today's progress now updates hourly and shows as an outlined cell on the heatmap.",
+            "Migrated the step data source from the Fitbit Web API to the Google Health API.",
+            "Added this changelog.",
         ],
     },
     {

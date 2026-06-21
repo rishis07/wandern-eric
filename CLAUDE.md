@@ -69,25 +69,33 @@ poetry run python main.py    # fetch yesterday + reaggregate + upload to GCS
   (`Aggregations.jsx`) depends on exactly these keys — changing the agg schema
   breaks the dashboard.
 
-## In progress: Fitbit → Google Health migration
+## In progress: Fitbit → Google Health API migration
 
-Fitbit accounts are being deprecated (~end of May 2026) in favor of Google
-Health / the Google Fitness API. Migration is **in progress**:
+Fitbit's Web API is being deprecated; Eric is migrating to the **Google Health API**
+(`https://health.googleapis.com/v4`) — the server-to-server REST successor to the
+Fitbit Web API. Migration is **in progress**: extraction is verified, not yet wired
+into production.
 
 - `python-backend/main.py` (Fitbit) is still the **live source of truth** on the Pi.
-- `python-backend/google_health_example.py` — working Google Fitness extraction
-  (OAuth2 + `users().dataset().aggregate()`), built with Copilot's help. The
-  **test works**, but is not yet wired into the production pipeline.
-- `python-backend/gh_migration.ipynb` — migration scratch/exploration notebook.
+- `python-backend/google_health_api_migration.ipynb` — **the correct target, verified
+  working.** `POST /users/me/dataTypes/steps/dataPoints:dailyRollUp` (scope
+  `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`,
+  `windowSizeDays: 1`) returns daily step totals; the notebook maps
+  `rollupDataPoints[].steps.countSum` to the existing `{date, count}` record so the
+  aggregations/GCS/frontend stay unchanged. Cross-checked vs production (6808 steps on
+  2026-02-26 matched).
+- ⚠️ **Dead ends — do NOT build on these:** `google_health_example.py` and
+  `gh_migration.ipynb` use the **Google Fit REST API** (`fitness/v1`), which is **shut
+  down end of 2026**. And "Health Connect" is Android, **on-device only (no cloud API)** —
+  not usable from the Pi. Neither is a valid target. (This also resolves the old
+  "what does the Fit `aggregateBy`/`bucketByTime` body do" question — moot now.)
 
-**Open question Eric wants resolved (don't lose this):** the Google Fitness
-`aggregateBy` request "filters" in `google_health_example.py` are not yet
-understood — specifically what `dataTypeName`
-(`com.google.step_count.delta`), the `dataSourceId`
-(`derived:...:estimated_steps`), and `bucketByTime` actually select and how they
-combine. It "just works" and that's unsatisfying. When touching this code,
-prefer explaining/citing the official Google Fitness REST docs over adding more
-unexplained magic.
+Production swap (when ready): replace `FitbitController` with a `GoogleHealthController`
+whose `get_daily_steps(date)` returns `{date, count}`; everything downstream is unchanged.
+Note the `sedentary_minutes` field isn't in the Health API `steps` type (frontend doesn't
+use it, so safe to drop). First OAuth needs a browser — do it once, then copy
+`secrets/token_health.json` to the Pi (Google refresh tokens don't single-use-rotate like
+Fitbit's, so the two-machine desync problem goes away).
 
 ## Secrets — IMPORTANT
 

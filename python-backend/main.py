@@ -1,10 +1,11 @@
-from requests_oauthlib import OAuth2Session
 from google.cloud import storage
+from google.auth.transport.requests import AuthorizedSession, Request
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
 from pathlib import Path
 from dotenv import load_dotenv
 import datetime
 from calendar import monthrange
-import webbrowser
 import os
 import json
 import argparse
@@ -14,17 +15,6 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 load_dotenv()
 
 ROOT_DIR = Path(__file__).parent
-TOKEN_PATH = ROOT_DIR / "token.json"
-
-# Replace with your Fitbit app details
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
-
-AUTH_BASE_URL = os.getenv("AUTH_BASE_URL")
-AUTH_URL = os.getenv("AUTH_URL")
-TOKEN_URL = os.getenv("TOKEN_URL")
-
 
 # GCP config
 GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
@@ -32,8 +22,11 @@ GCP_DATA_BLOB_NAME = "data.json"
 GCP_AGG_BLOB_NAME = "aggregations.json"
 GCP_TODAY_BLOB_NAME = "today.json"
 
-# Scopes determine what data you can read
-SCOPES = ["activity", "cardio_fitness", "location", "heartrate", "sleep", "profile"]
+# Google Health API config (server-to-server successor to the Fitbit Web API)
+HEALTH_BASE_URL = "https://health.googleapis.com/v4"
+HEALTH_SCOPES = ["https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly"]
+HEALTH_CLIENT_SECRET_PATH = ROOT_DIR / "secrets/client_secret_health.json"
+HEALTH_TOKEN_PATH = ROOT_DIR / "secrets/token_health.json"
 
 
 def get_file_from_gcp(bucket_name, blob_name):
@@ -168,121 +161,99 @@ def calculate_aggregations(data_path: Path):
     return aggregations
 
 
-class FitbitController:
+class GoogleHealthController:
+    """Reads daily steps from the Google Health API.
+
+    Replaces the old Fitbit Web API integration. get_daily_steps(date_str)
+    keeps the same {date, count} contract the rest of the pipeline expects.
+    """
+
     def __init__(self):
         self.session = self.__get_session()
 
-    def __save_token(self, token):
-        token["expires_at"] = datetime.datetime.now().timestamp() + token["expires_in"]
-        with open(TOKEN_PATH, "w") as f:
-            json.dump(token, f)
-
-    def __get_refresh_token(self, token):
-        import requests
-        import base64
-
-        url = "https://api.fitbit.com/oauth2/token"
-
-        auth_string = f"{CLIENT_ID}:{CLIENT_SECRET}"
-        auth_header = base64.b64encode(auth_string.encode()).decode()
-
-        headers = {
-            "Authorization": f"Basic {auth_header}",
-            "Content-Type": "application/x-www-form-urlencoded",
+    def __save_token(self, creds):
+        token_data = {
+            "token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri,
+            "client_id": creds.client_id,
+            "client_secret": creds.client_secret,
         }
-
-        data_request = {
-            "grant_type": "refresh_token",
-            "client_id": f"{CLIENT_ID}",
-            "refresh_token": f'{token["refresh_token"]}',
-        }
-
-        response = requests.post(url, headers=headers, data=data_request)
-        refreshed = response.json()
-
-        # Fitbit returns an error payload (no access_token) when the refresh
-        # token is invalid. Fail clearly instead of crashing later with a
-        # cryptic KeyError on token["expires_in"].
-        if response.status_code != 200 or "access_token" not in refreshed:
-            detail = (
-                refreshed.get("errors")
-                or refreshed.get("error_description")
-                or refreshed.get("error")
-                or "unknown error"
-            )
-            raise RuntimeError(
-                f"Fitbit token refresh failed (HTTP {response.status_code}): {detail}."
-            )
-
-        return refreshed
+        HEALTH_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(HEALTH_TOKEN_PATH, "w") as f:
+            json.dump(token_data, f)
 
     def __get_session(self):
-        # load token
-        if TOKEN_PATH.exists():
-            with open(TOKEN_PATH) as f:
-                saved_token = json.load(f)
+        creds = None
 
-            if saved_token:
-                # check token is not expired
-                if saved_token["expires_at"] <= datetime.datetime.now().timestamp():
-                    print("Token expired, refreshing...")
-                    saved_token = self.__get_refresh_token(saved_token)
-                    self.__save_token(saved_token)
-                    print("Token refreshed.")
+        if HEALTH_TOKEN_PATH.exists():
+            with open(HEALTH_TOKEN_PATH) as f:
+                token_data = json.load(f)
+            creds = google.oauth2.credentials.Credentials(
+                token=token_data.get("token"),
+                refresh_token=token_data.get("refresh_token"),
+                token_uri=token_data.get("token_uri"),
+                client_id=token_data.get("client_id"),
+                client_secret=token_data.get("client_secret"),
+                scopes=HEALTH_SCOPES,
+            )
 
-                client = OAuth2Session(
-                    CLIENT_ID,
-                    token=saved_token,
-                    auto_refresh_url=TOKEN_URL,
-                    auto_refresh_kwargs={
-                        "client_id": CLIENT_ID,
-                        "client_secret": CLIENT_SECRET,
-                    },
-                    token_updater=self.__save_token,
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                print("Token expired, refreshing...")
+                creds.refresh(Request())
+                print("Token refreshed.")
+            else:
+                # First-time authorization (needs a browser).
+                flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
+                    str(HEALTH_CLIENT_SECRET_PATH), scopes=HEALTH_SCOPES
                 )
+                creds = flow.run_local_server(port=8080)
+            self.__save_token(creds)
 
-                return client
+        # AuthorizedSession refreshes the access token automatically per request.
+        return AuthorizedSession(creds)
 
-        # First-time authorization
-        fitbit = OAuth2Session(CLIENT_ID, redirect_uri=REDIRECT_URI, scope=SCOPES)
-
-        authorization_url, state = fitbit.authorization_url(AUTH_URL)
-        print("Open this URL to authorize:", authorization_url)
-        webbrowser.open(authorization_url)
-
-        redirect_response = input("Paste full redirect URL: ")
-
-        token = fitbit.fetch_token(
-            TOKEN_URL,
-            client_secret=CLIENT_SECRET,
-            authorization_response=redirect_response,
-        )
-
-        # save token
-        self.__save_token(token)
-
-        return fitbit
+    @staticmethod
+    def __civil(d):
+        """Google Health CivilDateTime for the start of a day (local time)."""
+        return {
+            "date": {"year": d.year, "month": d.month, "day": d.day},
+            "time": {"hours": 0, "minutes": 0},
+        }
 
     def get_daily_steps(self, date_str):
-        resp = self.session.get(
-            f"https://api.fitbit.com/1/user/-/activities/date/{date_str}.json"
+        date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+
+        url = f"{HEALTH_BASE_URL}/users/me/dataTypes/steps/dataPoints:dailyRollUp"
+        body = {
+            "range": {
+                "start": self.__civil(date),
+                "end": self.__civil(date + datetime.timedelta(days=1)),
+            },
+            "windowSizeDays": 1,
+        }
+
+        resp = self.session.post(
+            url, json=body, headers={"Accept": "application/json"}
         )
         if resp.status_code != 200:
             raise ValueError(f"Error fetching data: {resp.status_code} - {resp.text}")
-        steps = resp.json()["summary"]["steps"]
-        sedentary_mins = resp.json()["summary"]["sedentaryMinutes"]
+
+        steps = 0
+        for rp in resp.json().get("rollupDataPoints", []):
+            steps += int(rp.get("steps", {}).get("countSum", 0))
 
         record = {
             "date": date_str,
             "count": steps,
-            "sedentary_minutes": sedentary_mins,
         }
         return record
 
 
-def update_and_save_fitbit_data(data_path: Path, date_str: str):
-    fitbit_controller = FitbitController()
-    record = fitbit_controller.get_daily_steps(date_str)
+def update_and_save_data(data_path: Path, date_str: str):
+    controller = GoogleHealthController()
+    record = controller.get_daily_steps(date_str)
     print(f"Fetched data: {record}")
 
     # download from GCP
@@ -309,8 +280,8 @@ def run_daily():
 
     print(f"[daily] Fetching finalized data for: {yesterday_str}")
 
-    # Get data from fitbit
-    update_and_save_fitbit_data(data_path, yesterday_str)
+    # Get data from the Google Health API
+    update_and_save_data(data_path, yesterday_str)
 
     # aggregations
     aggregations = calculate_aggregations(data_path)
@@ -334,7 +305,7 @@ def run_intraday():
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     print(f"[intraday] Fetching in-progress data for: {today_str}")
 
-    controller = FitbitController()
+    controller = GoogleHealthController()
     record = controller.get_daily_steps(today_str)
     record["intraday"] = True  # flags the day as still in progress
 
@@ -351,7 +322,7 @@ def run_intraday():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Wandern Eric Fitbit extractor")
+    parser = argparse.ArgumentParser(description="Wandern Eric step extractor (Google Health API)")
     parser.add_argument(
         "--intraday",
         action="store_true",
