@@ -1,26 +1,18 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-import {
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-} from "recharts";
+import Activities from "./Activities";
 
-export default function Heatmap() {
+const AGG_URL = "https://storage.googleapis.com/wandern-eric-data/aggregations.json";
+
+export default function Aggregations() {
     const today = new Date();
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        fetch("https://storage.googleapis.com/wandern-eric-data/aggregations.json")
+        fetch(AGG_URL)
             .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Failed to load heatmap data");
-                }
+                if (!res.ok) throw new Error("Failed to load aggregations data");
                 return res.json();
             })
             .then((json) => setData(json))
@@ -42,12 +34,15 @@ export default function Heatmap() {
             </div>
         );
     }
+
     const current = parseInt(data.prev_month_avg_to_eom_projection.current_month);
     const prev_month = parseInt(data.prev_month_avg_to_eom_projection.last_month);
-    const step_goal = 10000;
-    const indicatorMsg = current < prev_month ? `Extra ${Math.abs(current)} steps per day compared to last months!` : `Missing ${current} steps to reach last month avg`;
-    let BgAlertColor;
+    const indicatorMsg =
+        current < prev_month
+            ? `Extra ${Math.abs(current)} steps per day compared to last months!`
+            : `Missing ${current} steps to reach last month avg`;
 
+    let BgAlertColor;
     if (current < prev_month) {
         BgAlertColor = "bg-green-400";
     } else if (current > prev_month * 1.75) {
@@ -56,67 +51,51 @@ export default function Heatmap() {
         BgAlertColor = "bg-blue-400";
     }
 
+    const showAlert = today.getDate() >= 20 && current > -10000;
+
     return (
-        <div className="aggregations">
-            <div className="mx-auto mt-5">
-                <div className="bg-white p-6 text-center rounded-xl shadow grid grid-cols-1 md:grid-cols-3 gap-4" >
-                    {today.getDate() >= 20 && current > -10000 && (
-                        <div className={`${BgAlertColor} p-4 rounded-lg md:col-span-3`}>
-                            <p className="text-l font-bold">{indicatorMsg}</p>
-                            <p className="text-l font-bold">Last Month Avg: {prev_month}</p>
-                        </div>
-                    )}
-                    <div className="bg-blue-400 p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold mb-2">Max Steps</h3>
-                        <p className="text-2xl font-bold">{data.max_steps.date}</p>
-                        <p className="text-2xl font-bold">{data.max_steps.count}</p>
-                    </div>
-
-                    <div className="bg-blue-400 p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold mb-2">Max avg Day of the week</h3>
-                        <p className="text-2xl font-bold">{data.max_avg_dow.day_of_week}</p>
-                        <p className="text-2xl font-bold">{data.max_avg_dow.count.toFixed(0)}</p>
-                    </div>
-                    <div className="bg-blue-400 p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold mb-2">Average Steps per last 3 Months</h3>
-                        <ul>
-                            {data.avg_last_3_months.map((monthData) => (
-                                <li key={monthData.month} className="text-2xl font-bold">
-                                    {monthData.month}: {monthData.count.toFixed(0)}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+        <div>
+            {showAlert && (
+                <div className={`${BgAlertColor} p-4 rounded-xl shadow text-center mb-5`}>
+                    <p className="text-l font-bold">{indicatorMsg}</p>
+                    <p className="text-l font-bold">Last Month Avg: {prev_month}</p>
                 </div>
-            </div>
-            <div className="mx-auto mt-5">
-                <div className="bg-white p-6 rounded-xl shadow">
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+                {/* Left: step stats, mirroring the Activities panel look */}
+                <div className="bg-white p-6 rounded-xl shadow h-full flex flex-col">
                     <h3 className="text-lg font-semibold mb-4 text-blue-400 text-center">
-                        Average Steps Per Month Trend
+                        Step Stats
                     </h3>
+                    <ul className="flex flex-col gap-4 flex-1 justify-center">
+                        <li className="bg-blue-400 text-white rounded-lg p-3 text-center">
+                            <span className="font-semibold">Max Steps</span> —{" "}
+                            <span className="font-bold">{data.max_steps.count}</span> · {data.max_steps.date}
+                        </li>
 
-                    <div style={{ width: "100%", height: 300 }} text-blue-400>
-                        <ResponsiveContainer>
-                            <LineChart data={data.avg_per_month}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="month" />
-                                <YAxis />
-                                <Tooltip
-                                    labelStyle={{
-                                        color: "#60a5fa",   // blue-400
-                                        fontWeight: 600
-                                    }}
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="count"
-                                    stroke="#3b82f6"
-                                    strokeWidth={3}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
+                        <li className="bg-blue-400 text-white rounded-lg p-3 text-center">
+                            <span className="font-semibold">Max Avg Weekday</span> —{" "}
+                            {data.max_avg_dow.day_of_week} ·{" "}
+                            <span className="font-bold">{data.max_avg_dow.count.toFixed(0)}</span>
+                        </li>
+
+                        <li className="bg-blue-400 text-white rounded-lg p-3 text-center">
+                            <p className="font-semibold mb-1">Average Steps · last 3 months</p>
+                            <ul className="text-sm space-y-0.5">
+                                {data.avg_last_3_months.map((monthData) => (
+                                    <li key={monthData.month}>
+                                        {monthData.month}:{" "}
+                                        <span className="font-bold">{monthData.count.toFixed(0)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </li>
+                    </ul>
                 </div>
+
+                {/* Right: latest activities */}
+                <Activities />
             </div>
         </div>
     );

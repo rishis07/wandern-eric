@@ -10,6 +10,7 @@ secrets/
 data.json
 aggregations.json
 today.json
+activities.json
 
 # Python
 __pycache__/

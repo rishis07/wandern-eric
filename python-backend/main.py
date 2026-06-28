@@ -21,6 +21,12 @@ GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
 GCP_DATA_BLOB_NAME = "data.json"
 GCP_AGG_BLOB_NAME = "aggregations.json"
 GCP_TODAY_BLOB_NAME = "today.json"
+GCP_ACTIVITIES_BLOB_NAME = "activities.json"
+
+# Drop very short auto-detected sessions (the API surfaces stray ~4-second "activities").
+MIN_ACTIVITY_DURATION_SECONDS = 120
+# How many of the most recent consolidated activities to publish.
+ACTIVITIES_TO_SHOW = 3
 
 # Google Health API config (server-to-server successor to the Fitbit Web API)
 HEALTH_BASE_URL = "https://health.googleapis.com/v4"
@@ -161,6 +167,67 @@ def calculate_aggregations(data_path: Path):
     return aggregations
 
 
+def _parse_duration_seconds(value):
+    """'759.685s' / '599s' -> float seconds; 0.0 if missing."""
+    return float(value.rstrip("s")) if value else 0.0
+
+
+def _local_start(interval):
+    """UTC startTime + startUtcOffset -> naive datetime in the user's local time."""
+    dt = datetime.datetime.fromisoformat(interval["startTime"].replace("Z", "+00:00"))
+    offset = interval.get("startUtcOffset", "0s")
+    dt = dt + datetime.timedelta(seconds=int(float(offset.rstrip("s"))))
+    return dt.replace(tzinfo=None)
+
+
+def consolidate_activities(points):
+    """Raw `exercise` dataPoints -> consolidated entries, one per (local date, exercise type).
+
+    Sessions shorter than MIN_ACTIVITY_DURATION_SECONDS are dropped. Distance and duration are
+    summed within each group. exercise_type is the raw Google Health enum; label is the API's
+    displayName. Sorted newest first.
+    """
+    groups = {}
+    for p in points:
+        ex = p.get("exercise", {})
+        etype = ex.get("exerciseType")
+        if not etype:
+            continue
+        duration = _parse_duration_seconds(ex.get("activeDuration"))
+        if duration < MIN_ACTIVITY_DURATION_SECONDS:
+            continue
+
+        local_start = _local_start(ex["interval"])
+        date_str = local_start.strftime("%Y-%m-%d")
+        group = groups.setdefault(
+            (date_str, etype),
+            {
+                "date": date_str,
+                "exercise_type": etype,
+                "label": ex.get("displayName", etype.title()),
+                "sessions": 0,
+                "distance_km": 0.0,
+                "duration_seconds": 0.0,
+                "last_start_time": local_start.isoformat(),
+            },
+        )
+        group["sessions"] += 1
+        group["duration_seconds"] += duration
+        distance_mm = ex.get("metricsSummary", {}).get("distanceMillimeters")
+        if distance_mm:
+            group["distance_km"] += int(distance_mm) / 1_000_000
+        if local_start.isoformat() > group["last_start_time"]:
+            group["last_start_time"] = local_start.isoformat()
+
+    consolidated = list(groups.values())
+    for group in consolidated:
+        group["distance_km"] = round(group["distance_km"], 2)
+        group["duration_seconds"] = int(round(group["duration_seconds"]))
+
+    consolidated.sort(key=lambda g: (g["date"], g["last_start_time"]), reverse=True)
+    return consolidated
+
+
 class GoogleHealthController:
     """Reads daily steps from the Google Health API.
 
@@ -250,6 +317,30 @@ class GoogleHealthController:
         }
         return record
 
+    def get_exercise_points(self):
+        """All `exercise` (activity) sessions for the user, following pagination."""
+        url = f"{HEALTH_BASE_URL}/users/me/dataTypes/exercise/dataPoints"
+        points = []
+        page_token = None
+        for _ in range(100):  # safety cap; one page covers personal-scale data
+            params = {"pageSize": 1000}
+            if page_token:
+                params["pageToken"] = page_token
+            resp = self.session.get(
+                url, params=params, headers={"Accept": "application/json"}
+            )
+            if resp.status_code != 200:
+                raise ValueError(
+                    f"Error fetching activities: {resp.status_code} - {resp.text}"
+                )
+            data = resp.json()
+            page = data.get("dataPoints", [])
+            points.extend(page)
+            page_token = data.get("nextPageToken")
+            if not page_token or not page:
+                break
+        return points
+
 
 def update_and_save_data(data_path: Path, date_str: str):
     controller = GoogleHealthController()
@@ -267,6 +358,27 @@ def update_and_save_data(data_path: Path, date_str: str):
     # save locally
     with open(data_path, "w") as f:
         json.dump(data, f)
+
+
+def update_and_save_activities(controller: "GoogleHealthController"):
+    """Fetch exercise sessions, consolidate per (day, type), upload activities.json.
+
+    Uploaded no-cache (like today.json) so the CDN doesn't mask the hourly refresh. The full
+    consolidated history is stored; how many entries to show is the frontend's call.
+    """
+    points = controller.get_exercise_points()
+    activities = consolidate_activities(points)[:ACTIVITIES_TO_SHOW]
+
+    activities_path = ROOT_DIR / "activities.json"
+    with open(activities_path, "w") as f:
+        json.dump(activities, f)
+
+    upload_file_to_gcp(
+        GCP_BUCKET_NAME,
+        GCP_ACTIVITIES_BLOB_NAME,
+        str(activities_path),
+        cache_control="no-cache, max-age=0",
+    )
 
 
 def run_daily():
@@ -320,6 +432,9 @@ def run_intraday():
         str(today_path),
         cache_control="no-cache, max-age=0",
     )
+
+    # Refresh consolidated activities so today's workouts surface within the hour.
+    update_and_save_activities(controller)
 
 
 if __name__ == "__main__":
