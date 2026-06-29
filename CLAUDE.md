@@ -49,6 +49,21 @@ poetry install
 poetry run python main.py    # fetch yesterday + reaggregate + upload to GCS
 ```
 
+## Spec-driven development
+
+Non-trivial work (features, migrations, schema/aggregation changes) starts with
+a **spec** in `specs/` — agreed *before* code is written. See `specs/README.md`.
+
+- Create one via `/spec <title>` — this **starts a discussion**, it does not
+  infer a spec from the title. We converge through the template, then the file
+  is written with `Status: approved`.
+- **Specs are temporary** (alive while the work is in flight, then `done`);
+  **this file (CLAUDE.md) is permanent** — promote durable lessons up here.
+- The template's *Components affected* + *Deployment steps* exist to make sure
+  every deploy path is followed — especially the ⚠️ manual RasPi upload, which
+  isn't automatic.
+- Skip specs for trivia (typos, dep bumps, renames).
+
 ## How things actually run (deployment)
 
 - **Frontend:** auto-deployed by GitHub Actions on every push to `main`.
