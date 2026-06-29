@@ -23,6 +23,9 @@ GCP_AGG_BLOB_NAME = "aggregations.json"
 GCP_TODAY_BLOB_NAME = "today.json"
 GCP_ACTIVITIES_BLOB_NAME = "activities.json"
 
+# Set by the --no-upload CLI flag: run everything but skip GCS writes (safe testing).
+NO_UPLOAD = False
+
 # Drop very short auto-detected sessions (the API surfaces stray ~4-second "activities").
 MIN_ACTIVITY_DURATION_SECONDS = 120
 # How many of the most recent consolidated activities to publish.
@@ -52,6 +55,13 @@ def get_file_from_gcp(bucket_name, blob_name):
 
 # GCP logic
 def upload_file_to_gcp(bucket_name, destination_blob_name, local_path, cache_control=None):
+    if NO_UPLOAD:
+        print(
+            f"[no-upload] Skipping GCS upload of {local_path} → "
+            f"gs://{bucket_name}/{destination_blob_name}"
+        )
+        return
+
     project = os.getenv("GCP_PROJECT_ID")
     storage_client = storage.Client(project=project)
     bucket = storage_client.bucket(bucket_name)
@@ -445,7 +455,15 @@ if __name__ == "__main__":
         help="Fetch today's in-progress steps to today.json and skip aggregations "
         "(hourly run). Default finalizes yesterday + recomputes aggregations (1am run).",
     )
+    parser.add_argument(
+        "--no-upload",
+        action="store_true",
+        help="Run extraction + aggregation and write the local JSON, but skip all GCS "
+        "uploads. For safe testing without touching production data.",
+    )
     args = parser.parse_args()
+
+    NO_UPLOAD = args.no_upload
 
     if args.intraday:
         run_intraday()
