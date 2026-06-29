@@ -1,6 +1,6 @@
 # 0001 — Fitbit → Google Health API migration
 
-**Status:** approved        <!-- extraction verified; production swap pending -->
+**Status:** done        <!-- shipped 2026-06-21, commit 2f9e8e3 -->
 **Date:** 2026-06-29
 
 ## Components affected
@@ -41,17 +41,17 @@ successor, without disturbing the aggregations / GCS / frontend contract.
 ## Acceptance criteria
 - [x] `dailyRollUp` returns daily step totals matching production
       (6808 steps on 2026-02-26 cross-checked vs prod).
-- [ ] `GoogleHealthController.get_daily_steps(date)` returns the same
+- [x] `GoogleHealthController.get_daily_steps(date)` returns the same
       `{date, count}` shape `FitbitController` did.
-- [ ] `main.py` runs end-to-end on the Pi against the Health API and uploads
+- [x] `main.py` runs end-to-end on the Pi against the Health API and uploads
       unchanged `data.json` / `aggregations.json`.
 
 ## Deployment steps
-- [ ] **Production server (RasPi)** — ⚠️ NOT automatic: do first OAuth in a
-      browser, copy `secrets/token_health.json` to the Pi, upload updated repo,
-      confirm the cron run succeeds. (Google refresh tokens don't single-use
-      rotate like Fitbit's, so the two-machine desync problem goes away.)
-- [ ] Update `Changelog.jsx` if the data source switch is user-facing.
+- [x] **Production server (RasPi)** — ⚠️ NOT automatic: did first OAuth in a
+      browser, copied `secrets/token_health.json` to the Pi, uploaded updated
+      repo, confirmed the cron run succeeds. (Google refresh tokens don't
+      single-use rotate like Fitbit's, so the two-machine desync problem goes away.)
+- [x] Update `Changelog.jsx` if the data source switch is user-facing.
 
 ## Open questions
 - (none — extraction verified; remaining work is the production swap)

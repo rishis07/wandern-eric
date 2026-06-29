@@ -84,44 +84,43 @@ a **spec** in `specs/` — agreed *before* code is written. See `specs/README.md
   (`Aggregations.jsx`) depends on exactly these keys — changing the agg schema
   breaks the dashboard.
 
-## In progress: Fitbit → Google Health API migration
+## Step extraction: Google Health API (migration done)
 
-Fitbit's Web API is being deprecated; Eric is migrating to the **Google Health API**
-(`https://health.googleapis.com/v4`) — the server-to-server REST successor to the
-Fitbit Web API. Migration is **in progress**: extraction is verified, not yet wired
-into production.
+Extraction runs on the **Google Health API** (`https://health.googleapis.com/v4`),
+the server-to-server REST successor to the deprecated Fitbit Web API. The migration
+**shipped 2026-06-21** (commit `2f9e8e3`) — `FitbitController` is fully removed; the
+Pi runs the Google Health code. See `specs/0001-google-health-migration.md`.
 
-- `python-backend/main.py` (Fitbit) is still the **live source of truth** on the Pi.
-- `python-backend/google_health_api_migration.ipynb` — **the correct target, verified
-  working.** `POST /users/me/dataTypes/steps/dataPoints:dailyRollUp` (scope
+- `GoogleHealthController.get_daily_steps(date)` returns `{date, count}` via
+  `POST /users/me/dataTypes/steps/dataPoints:dailyRollUp` (scope
   `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`,
-  `windowSizeDays: 1`) returns daily step totals; the notebook maps
-  `rollupDataPoints[].steps.countSum` to the existing `{date, count}` record so the
-  aggregations/GCS/frontend stay unchanged. Cross-checked vs production (6808 steps on
-  2026-02-26 matched).
+  `windowSizeDays: 1`). Verified vs production (6808 steps on 2026-02-26 matched).
+  The `{date, count}` contract is unchanged from the Fitbit era, so aggregations /
+  GCS / frontend were untouched (the unused `sedentary_minutes` field was dropped).
+- **Activities** (commit `e71b294`, see `specs/0002-activities-module.md`):
+  `get_exercise_points()` + `consolidate_activities()` publish `activities.json`
+  from the hourly intraday run.
+- OAuth: token persists in `secrets/token_health.json`; `AuthorizedSession`
+  auto-refreshes per request. First OAuth needs a browser, then copy the token to
+  the Pi (Google refresh tokens don't single-use-rotate like Fitbit's did).
 - ⚠️ **Dead ends — do NOT build on these:** `google_health_example.py` and
-  `gh_migration.ipynb` use the **Google Fit REST API** (`fitness/v1`), which is **shut
-  down end of 2026**. And "Health Connect" is Android, **on-device only (no cloud API)** —
-  not usable from the Pi. Neither is a valid target. (This also resolves the old
-  "what does the Fit `aggregateBy`/`bucketByTime` body do" question — moot now.)
-
-Production swap (when ready): replace `FitbitController` with a `GoogleHealthController`
-whose `get_daily_steps(date)` returns `{date, count}`; everything downstream is unchanged.
-Note the `sedentary_minutes` field isn't in the Health API `steps` type (frontend doesn't
-use it, so safe to drop). First OAuth needs a browser — do it once, then copy
-`secrets/token_health.json` to the Pi (Google refresh tokens don't single-use-rotate like
-Fitbit's, so the two-machine desync problem goes away).
+  `gh_migration.ipynb` use the **Google Fit REST API** (`fitness/v1`), **shut down
+  end of 2026**. "Health Connect" is Android, **on-device only (no cloud API)** —
+  not usable from the Pi.
+- ⚠️ Known issue (README backlog): the daily append in `update_and_save_data` is
+  **non-idempotent** — `run_daily` downloads prod `data.json`, appends yesterday,
+  re-uploads, so running it twice duplicates a record. Matters for manual/test runs.
 
 ## Secrets — IMPORTANT
 
-The following live in `python-backend/` and are **untracked but unprotected**
-(there is no `.gitignore` in `python-backend/` or at the repo root):
-`.env`, `token.json`, `secrets/` (`client_secret.json`,
-`application_default_credentials.json`), and `token_gh.json` (Google Health).
+Secrets live in `python-backend/` and are now protected by
+`python-backend/.gitignore` — it covers `.env`, `token.json`, `token_gh.json`,
+`secrets/` (incl. `token_health.json`, `*client_secret*.json`,
+`*credentials*.json`), and the generated `*.json` data files.
 
-Do **not** `git add` these, and never run a blanket `git add .` / `git add -A`
-from the repo root or `python-backend/` without checking. Consider adding a
-`.gitignore` to protect them. Never print their contents.
+Still: there is **no root `.gitignore`**, so don't run a blanket `git add .` /
+`git add -A` from the repo root without checking what it stages. Never `git add`
+a secret, and never print their contents.
 
 ## Conventions / gotchas
 
