@@ -4,6 +4,12 @@ import { useState } from "react";
 // Drafted from git history — edit freely.
 const CHANGES = [
     {
+        date: "2026-07-01",
+        items: [
+            "Added a week-over-week chart — this week vs last week as bars, with your typical week as a line.",
+        ],
+    },
+    {
         date: "2026-06-28",
         items: [
             "Added a Latest Activities panel — your most recent bike, treadmill, and walk workouts, pulled from the Google Health API.",

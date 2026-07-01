@@ -1,6 +1,7 @@
 import Heatmap from "./components/Heatmap";
 import Aggregations from "./components/Aggregations";
 import StepsTrend from "./components/StepsTrend";
+import WeekComparison from "./components/WeekComparison";
 import Changelog from "./components/Changelog";
 
 export default function App() {
@@ -18,6 +19,10 @@ export default function App() {
 
       <div className="mx-auto mt-5">
         <StepsTrend />
+      </div>
+
+      <div className="mx-auto mt-5">
+        <WeekComparison />
       </div>
 
       <div className="mx-auto mt-5">

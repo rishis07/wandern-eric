@@ -111,6 +111,26 @@ def calculate_aggregations(data_path: Path):
         avg_by_day["count"].max() == avg_by_day["count"]
     ].to_dict(orient="records")[0]
 
+    # Full weekday averages, Monday-first — the same avg_by_day used for
+    # max_avg_dow, but all 7 days exposed (one definition of "typical weekday").
+    # Powers the frontend week-over-week chart's "typical week" line. Weekdays
+    # with no records are omitted (nothing to average).
+    weekday_order = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    dow_means = dict(zip(avg_by_day["day_of_week"], avg_by_day["count"]))
+    aggregations["avg_steps_by_weekday"] = [
+        {"day": day, "steps": float(dow_means[day])}
+        for day in weekday_order
+        if day in dow_means
+    ]
+
     # avg per month
     df["month_num"] = df["date"].dt.month
     df["month"] = df["date"].dt.month_name()
