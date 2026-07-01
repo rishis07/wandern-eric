@@ -1,6 +1,6 @@
 # 0003 — Week-over-week chart (this week vs last week vs typical)
 
-**Status:** approved        <!-- draft → approved → done -->
+**Status:** done        <!-- shipped 2026-07-01, commit c3fd4eb; Pi updated same day -->
 **Date:** 2026-07-01
 
 ## Components affected
@@ -93,28 +93,28 @@ does not recompute any metric.
   be investigated before trusting week/day boundaries for a globe-trotting Eric.
 
 ## Acceptance criteria
-- [ ] `aggregations.json` contains `avg_steps_by_weekday` with 7 entries,
+- [x] `aggregations.json` contains `avg_steps_by_weekday` with 7 entries,
       Monday-first, each the all-history mean for that weekday; existing keys
       unchanged (frontend `Aggregations.jsx` / `StepsTrend.jsx` still work).
-- [ ] `avg_steps_by_weekday[day].steps` matches a hand-computed mean of that
+- [x] `avg_steps_by_weekday[day].steps` matches a hand-computed mean of that
       weekday's counts in `data.json` (missing days excluded).
-- [ ] `WeekComparison.jsx` renders a Mon→Sun ComposedChart: average as a line,
+- [x] `WeekComparison.jsx` renders a Mon→Sun ComposedChart: average as a line,
       last week and this week as grouped bars.
-- [ ] This week's not-yet-occurred weekdays show no bar; today's bar reflects
+- [x] This week's not-yet-occurred weekdays show no bar; today's bar reflects
       `today.json` and updates within the hour (no-cache).
-- [ ] Week windows are correct across a browser set to a non-Berlin timezone
+- [x] Week windows are correct across a browser set to a non-Berlin timezone
       (anchored on data dates, not the browser clock).
 
 ## Deployment steps
-- [ ] **Frontend** — push to `main` → GitHub Actions auto-builds & deploys to
+- [x] **Frontend** — push to `main` → GitHub Actions auto-builds & deploys to
       GitHub Pages / wandern-eric.de.
-- [ ] **Production server (RasPi)** — ⚠️ NOT automatic: the new
+- [x] **Production server (RasPi)** — ⚠️ NOT automatic: the new
       `calculate_aggregations()` code only produces `avg_steps_by_weekday` on the
       Pi after the repo is uploaded there. No crontab/env change — the daily run
       picks it up once the code is present.
-- [ ] **GCS schema** — additive key only; regenerated on the next daily run (or a
+- [x] **GCS schema** — additive key only; regenerated on the next daily run (or a
       manual `run_daily`) so the frontend has data to read.
-- [ ] Update `Changelog.jsx` (week-over-week chart entry).
+- [x] Update `Changelog.jsx` (week-over-week chart entry).
 
 ## Open questions
 - (none — approved)
