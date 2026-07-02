@@ -4,6 +4,13 @@ import { useState } from "react";
 // Drafted from git history — edit freely.
 const CHANGES = [
     {
+        date: "2026-07-02",
+        items: [
+            "The step heatmap now starts each week on Monday.",
+            "Replaced the third-party calendar-heatmap library with our own implementation.",
+        ],
+    },
+    {
         date: "2026-07-01",
         items: [
             "Added a week-over-week chart — this week vs last week as bars, with your typical week as a line.",

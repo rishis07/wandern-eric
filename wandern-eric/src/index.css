@@ -69,3 +69,9 @@ h1 {
   stroke: #3b82f6;
   stroke-width: 2px;
 }
+
+/* custom StepHeatmap: outline the cell under the cursor (matches the old lib) */
+.heatmap-cell:hover {
+  stroke: #555;
+  stroke-width: 1px;
+}

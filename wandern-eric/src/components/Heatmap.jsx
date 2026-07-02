@@ -1,17 +1,13 @@
-import React, { useEffect, useState } from "react";
-import CalendarHeatmap from "react-calendar-heatmap";
-import { Tooltip } from "react-tooltip";
-import "react-calendar-heatmap/dist/styles.css";
+import { useEffect, useState } from "react";
 
 import { DATA_BASE_URL } from "../lib/config";
+import StepHeatmap from "./StepHeatmap";
 
 export default function Heatmap() {
     const today = new Date();
+    const pastDate = new Date(new Date().setDate(new Date().getDate() - 365));
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
-
-    const pastDate = new Date(new Date().setDate(new Date().getDate() - 365));
-
 
     useEffect(() => {
         const base = DATA_BASE_URL;
@@ -28,11 +24,11 @@ export default function Heatmap() {
             .catch(() => null);
 
         Promise.all([historicalReq, todayReq])
-            .then(([historical, today]) => {
+            .then(([historical, todayRecord]) => {
                 const byDate = new Map(historical.map((d) => [d.date, d]));
                 // Finalized data always wins; only add today if it isn't finalized yet.
-                if (today && !byDate.has(today.date)) {
-                    byDate.set(today.date, today);
+                if (todayRecord && !byDate.has(todayRecord.date)) {
+                    byDate.set(todayRecord.date, todayRecord);
                 }
                 setData(Array.from(byDate.values()));
             })
@@ -57,32 +53,7 @@ export default function Heatmap() {
 
     return (
         <div className="bg-white p-6 rounded-xl shadow">
-            <CalendarHeatmap
-                startDate={pastDate}
-                endDate={today}
-                values={data}
-                classForValue={(value) => {
-                    if (!value) return "color-scale-0";
-                    let scale;
-                    if (value.count <= 1000) scale = "color-scale-1";
-                    else if (value.count <= 2500) scale = "color-scale-2";
-                    else if (value.count <= 5000) scale = "color-scale-3";
-                    else if (value.count <= 7500) scale = "color-scale-4";
-                    else if (value.count < 10000) scale = "color-scale-5";
-                    else scale = "color-scale-6";
-                    // mark today's still-in-progress cell so it stands out
-                    return value.intraday ? `${scale} color-scale-intraday` : scale;
-                }}
-                tooltipDataAttrs={(value) => ({
-                    "data-tooltip-id": "walking-heatmap-tooltip",
-                    "data-tooltip-content": value.date
-                        ? `${value.date}: ${value.count} steps${value.intraday ? " (so far today)" : ""}`
-                        : "No data",
-                })}
-                showWeekdayLabels={true}
-            />
-
-            <Tooltip id="walking-heatmap-tooltip" />
+            <StepHeatmap data={data} startDate={pastDate} endDate={today} />
         </div>
     );
 }
