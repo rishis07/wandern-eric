@@ -10,7 +10,9 @@ import {
     ResponsiveContainer,
 } from "recharts";
 
-const AGG_URL = "https://storage.googleapis.com/wandern-eric-data/aggregations.json";
+import { DATA_BASE_URL } from "../lib/config";
+
+const AGG_URL = `${DATA_BASE_URL}/aggregations.json`;
 
 export default function StepsTrend() {
     const [data, setData] = useState(null);

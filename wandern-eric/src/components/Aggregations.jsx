@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 
 import Activities from "./Activities";
+import { DATA_BASE_URL } from "../lib/config";
 
-const AGG_URL = "https://storage.googleapis.com/wandern-eric-data/aggregations.json";
+const AGG_URL = `${DATA_BASE_URL}/aggregations.json`;
 
 export default function Aggregations() {
     const today = new Date();

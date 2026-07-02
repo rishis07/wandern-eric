@@ -13,8 +13,9 @@ import {
 } from "recharts";
 
 import { WEEKDAYS, weekDates } from "../lib/week";
+import { DATA_BASE_URL } from "../lib/config";
 
-const BASE = "https://storage.googleapis.com/wandern-eric-data";
+const BASE = DATA_BASE_URL;
 
 // Averaging is the backend's job (avg_steps_by_weekday). This week / last week
 // are raw daily counts we just window out of data.json + today.json — the same

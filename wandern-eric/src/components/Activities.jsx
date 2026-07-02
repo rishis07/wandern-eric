@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
-const ACTIVITIES_URL = "https://storage.googleapis.com/wandern-eric-data/activities.json";
+import { DATA_BASE_URL } from "../lib/config";
+
+const ACTIVITIES_URL = `${DATA_BASE_URL}/activities.json`;
 const ICON_BASE = `${import.meta.env.BASE_URL}activities/`;
 
 // Google Health exerciseType -> icon file in public/activities/. Unknown types fall

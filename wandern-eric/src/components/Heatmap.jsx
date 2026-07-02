@@ -3,6 +3,8 @@ import CalendarHeatmap from "react-calendar-heatmap";
 import { Tooltip } from "react-tooltip";
 import "react-calendar-heatmap/dist/styles.css";
 
+import { DATA_BASE_URL } from "../lib/config";
+
 export default function Heatmap() {
     const today = new Date();
     const [data, setData] = useState(null);
@@ -12,7 +14,7 @@ export default function Heatmap() {
 
 
     useEffect(() => {
-        const base = "https://storage.googleapis.com/wandern-eric-data";
+        const base = DATA_BASE_URL;
 
         // Finalized days (required) + today's in-progress record (optional).
         const historicalReq = fetch(`${base}/data.json`).then((res) => {
