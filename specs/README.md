@@ -42,6 +42,11 @@ discussion** — it does not write a file from a title. We work through the
 template together, resolve every open question, and only then is the file
 written as `NNNN-<slug>.md` with `Status: approved`.
 
+Two modes: if the design was already hashed out in the session, the spec is
+**synthesized** from that discussion and confirmed (no re-interview). Otherwise
+it's an **interview** — one question at a time, each with a recommended answer,
+and anything the codebase can answer is looked up instead of asked.
+
 ## Files
 
 - `TEMPLATE.md` — copy of the structure every spec follows.
