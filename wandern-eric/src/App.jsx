@@ -1,31 +1,38 @@
+import ProjectionAlert from "./components/ProjectionAlert";
 import Heatmap from "./components/Heatmap";
-import Aggregations from "./components/Aggregations";
-import StepsTrend from "./components/StepsTrend";
 import WeekComparison from "./components/WeekComparison";
+import Activities from "./components/Activities";
+import StepsTrend from "./components/StepsTrend";
+import StepStats from "./components/StepStats";
 import Changelog from "./components/Changelog";
 
+// Layout per specs/0005: one time horizon per row — alert (the guilt trip),
+// heatmap (the year), this week, history. Nothing goes above the heatmap
+// except the alert.
 export default function App() {
   return (
     <div className="min-h-screen w-full bg-gray-100 p-6">
       <h1 className="text-3xl font-bold text-blue-400 text-center">Wandern Eric</h1>
 
-      <div className="mx-auto mt-5">
+      <div className="mx-auto mt-5 flex flex-col gap-5">
+        <ProjectionAlert />
+
         <Heatmap />
-      </div>
 
-      <div className="mx-auto mt-5">
-        <Aggregations />
-      </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+          <div className="lg:col-span-2">
+            <WeekComparison />
+          </div>
+          <Activities />
+        </div>
 
-      <div className="mx-auto mt-5">
-        <StepsTrend />
-      </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+          <div className="lg:col-span-2">
+            <StepsTrend />
+          </div>
+          <StepStats />
+        </div>
 
-      <div className="mx-auto mt-5">
-        <WeekComparison />
-      </div>
-
-      <div className="mx-auto mt-5">
         <Changelog />
       </div>
     </div>

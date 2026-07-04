@@ -4,6 +4,13 @@ import { useState } from "react";
 // Drafted from git history — edit freely.
 const CHANGES = [
     {
+        date: "2026-07-04",
+        items: [
+            "Regrouped the dashboard by time horizon: heatmap up top, then this week (week chart + latest activities), then history (monthly trend + step stats).",
+            "The end-of-month projection alert now sits at the very top of the page.",
+        ],
+    },
+    {
         date: "2026-07-02",
         items: [
             "The step heatmap now starts each week on Monday.",
