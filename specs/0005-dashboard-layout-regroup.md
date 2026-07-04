@@ -1,6 +1,6 @@
 # 0005 — Dashboard layout regroup
 
-**Status:** approved
+**Status:** done
 **Date:** 2026-07-04
 
 ## Components affected
@@ -46,20 +46,21 @@ change.
 - `wandern-tests/` stays untouched.
 
 ## Acceptance criteria
-- [ ] Page renders in the order above; alert still only appears from the 20th
+- [x] Page renders in the order above; alert still only appears from the 20th
       of the month.
-- [ ] On `lg` screens the two rows show 2/3 + 1/3 side by side; on mobile they
+- [x] On `lg` screens the two rows show 2/3 + 1/3 side by side; on mobile they
       stack.
-- [ ] All data displayed is unchanged vs production (same numbers, same
+- [x] All data displayed is unchanged vs production (same numbers, same
       components).
-- [ ] `npm run lint` and `npm run build` pass.
-- [ ] Prototype files (`src/prototype/`, prototype entry in `App.jsx`) are
+- [x] `npm run lint` and `npm run build` pass.
+- [x] Prototype files (`src/prototype/`, prototype entry in `App.jsx`) are
       deleted.
 
 ## Deployment steps
-- [ ] **Frontend** — push to `main` → GitHub Actions auto-builds & deploys to
-      GitHub Pages / wandern-eric.de
-- [ ] Update `Changelog.jsx` (user-facing changes)
+- [x] **Frontend** — push to `main` → GitHub Actions auto-builds & deploys to
+      GitHub Pages / wandern-eric.de (first run failed transiently in
+      deploy-pages status polling; verified live after re-run)
+- [x] Update `Changelog.jsx` (user-facing changes)
 
 ## Open questions
 (none)

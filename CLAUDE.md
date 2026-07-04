@@ -67,6 +67,9 @@ a **spec** in `specs/` — agreed *before* code is written. See `specs/README.md
 ## How things actually run (deployment)
 
 - **Frontend:** auto-deployed by GitHub Actions on every push to `main`.
+  Gotcha: the `deploy-pages` step can fail transiently at "Getting Pages
+  deployment status..." even though the deployment was created — check whether
+  the live bundle already updated before retriggering; a UI re-run fixes it.
 - **Backend:** runs on Eric's **Raspberry Pi via cron**. The repo is **uploaded
   to the Pi manually** whenever the extraction logic changes — which is rare.
   So backend changes don't deploy themselves; mention when a change requires a
