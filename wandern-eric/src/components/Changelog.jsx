@@ -4,6 +4,12 @@ import { useState } from "react";
 // Drafted from git history — edit freely.
 const CHANGES = [
     {
+        date: "2026-07-06",
+        items: [
+            "Added a Support section — buy me a coffee, or cheer for free. Either way, I'll walk extra steps for you.",
+        ],
+    },
+    {
         date: "2026-07-04",
         items: [
             "Regrouped the dashboard by time horizon: heatmap up top, then this week (week chart + latest activities), then history (monthly trend + step stats).",

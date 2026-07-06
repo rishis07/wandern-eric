@@ -173,7 +173,7 @@ hook for LinkedIn content.
 - [x] **GCS schema** — new objects only; no existing keys (`data.json`,
       `aggregations.json`) touched, so `Heatmap.jsx`/`Aggregations.jsx` need
       no changes.
-- [ ] Update `Changelog.jsx` (user-facing change).
+- [x] Update `Changelog.jsx` (user-facing change).
 
 ## Open questions
 (none — resolved during spec discussion. Country display, BMC API queries,
