@@ -22,6 +22,7 @@ GCP_DATA_BLOB_NAME = "data.json"
 GCP_AGG_BLOB_NAME = "aggregations.json"
 GCP_TODAY_BLOB_NAME = "today.json"
 GCP_ACTIVITIES_BLOB_NAME = "activities.json"
+GCP_CHEERS_AGG_BLOB_NAME = "cheers_aggregations.json"
 
 # Set by the --no-upload CLI flag: run everything but skip GCS writes (safe testing).
 NO_UPLOAD = False
@@ -439,10 +440,29 @@ def run_daily():
     upload_file_to_gcp(GCP_BUCKET_NAME, GCP_AGG_BLOB_NAME, str(agg_path))
 
 
+def update_cheer_aggregations():
+    """Count this month's cheers (specs/0006) and publish cheers_aggregations.json."""
+    month_key = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m")
+    cheers = get_file_from_gcp(GCP_BUCKET_NAME, f"cheers/{month_key}.json")
+    aggregations = {"month": month_key, "count": len(cheers)}
+
+    agg_path = ROOT_DIR / "cheers_aggregations.json"
+    with open(agg_path, "w") as f:
+        json.dump(aggregations, f)
+
+    upload_file_to_gcp(
+        GCP_BUCKET_NAME,
+        GCP_CHEERS_AGG_BLOB_NAME,
+        str(agg_path),
+        cache_control="no-cache, max-age=0",
+    )
+
+
 def run_intraday():
-    """Fetch today's in-progress steps and overwrite today.json. No aggregations.
+    """Fetch today's in-progress steps and overwrite today.json. No step aggregations.
 
     Meant for the hourly cron run (8am–11pm). today.json holds a single record.
+    Also refreshes the cheer count (specs/0006) so it stays roughly hourly-fresh.
     """
     now = datetime.datetime.now()
     today_str = now.strftime("%Y-%m-%d")
@@ -465,6 +485,8 @@ def run_intraday():
 
     # Refresh consolidated activities so today's workouts surface within the hour.
     update_and_save_activities(controller)
+
+    update_cheer_aggregations()
 
 
 if __name__ == "__main__":

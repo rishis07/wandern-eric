@@ -12,6 +12,8 @@ how badly my sedentary life is affecting me.
 
 Live at [wandern-eric.de](https://wandern-eric.de).
 
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/wanderneric)
+
 ## Architecture
 
 Steps flow from a fitness watch to a public cloud bucket to a static dashboard.
@@ -132,6 +134,13 @@ The workflow at `.github/workflows/deploy.yml` builds `wandern-eric/` and deploy
   whether that date already exists, so running the daily job twice for the same date
   creates a duplicate record that has to be deleted by hand. Easy fix: replace-or-insert
   by `date` (drop any existing record for that date before appending) so re-runs are safe.
+
+- **Query Buy Me a Coffee coffee counts.** BMC's API (`developer.buymeacoffee.com`,
+  `GET /v1/supporters`) returns each payment's `support_coffees` count and
+  `support_created_on` timestamp. Plan: add it to the daily `python-backend`
+  cron job (not a webhook), write a small stats file to the public bucket, and
+  have the frontend display it in the Support section (`Cheer.jsx`). Needs an
+  API access token stored like the other backend secrets.
 
 ## Out of scope (for now)
 
