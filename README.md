@@ -17,13 +17,18 @@ Live at [wandern-eric.de](https://wandern-eric.de).
 ## Architecture
 
 Steps flow from a fitness watch to a public cloud bucket to a static dashboard.
-There is no API server in between: the bucket is the only contract between the
-backend and the frontend.
+For most of the dashboard there is no API server: the bucket is the only
+contract between the backend and the frontend. The one exception is the free
+"cheer" button, which does have a real API behind it — see Backend below.
 
 ```
 Backend (cron)                      GCS bucket (public, read-only)          GitHub Pages
 python-backend/main.py  --upload-->  data.json + aggregations.json  --fetch-->  wandern-eric/ (React)
    (Google Health API)               today.json + activities.json             wandern-eric.de
+                                     cheers_aggregations.json
+
+cheer-function/ (GCP Cloud Function)  --append-->  cheers/<YYYY-MM>.json  ---^
+   POST /cheer, called directly by the frontend         (same bucket)
 ```
 
 ### Frontend
@@ -38,8 +43,14 @@ React 19 + Tailwind v4 + Vite. Auto-deployed to GitHub Pages on every push to
 Python (Poetry). A daily cron job pulls the previous day's steps from the Google
 Health API, appends them to `data.json`, recomputes `aggregations.json` with
 Pandas, and uploads both to the bucket. An hourly job publishes today's
-in-progress steps (`today.json`) and the latest workouts (`activities.json`).
-Runs as scheduled cron jobs on an always-on machine.
+in-progress steps (`today.json`), the latest workouts (`activities.json`), and
+(as of the Support feature) a count of this month's free cheers
+(`cheers_aggregations.json`). Runs as scheduled cron jobs on an always-on
+machine.
+
+Separately, `cheer-function/` is a small public GCP Cloud Function
+(`POST /cheer`) the frontend calls directly to record a free cheer —
+see `cheer-function/README.md`.
 
 ## Run your own
 

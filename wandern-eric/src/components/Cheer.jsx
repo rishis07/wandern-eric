@@ -5,13 +5,21 @@ import { BUY_ME_A_COFFEE_URL } from "../lib/config";
 
 const CHEERED_KEY = "wandern-eric-cheered";
 
+// "Already cheered" resets every calendar month, matching the monthly
+// counter it softens the UI around — stores the month cheered in, not just
+// a bare flag, so a returning visitor next month can cheer again.
+function currentMonthKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export default function Cheer() {
     const [aggregations, setAggregations] = useState(null);
     const [error, setError] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState(null);
     const [cheered, setCheered] = useState(
-        () => localStorage.getItem(CHEERED_KEY) === "true",
+        () => localStorage.getItem(CHEERED_KEY) === currentMonthKey(),
     );
 
     useEffect(() => {
@@ -27,7 +35,7 @@ export default function Cheer() {
             await submitCheer();
             const fresh = await fetchCheerAggregations();
             setAggregations(fresh);
-            localStorage.setItem(CHEERED_KEY, "true");
+            localStorage.setItem(CHEERED_KEY, currentMonthKey());
             setCheered(true);
         } catch (err) {
             setSubmitError(err.message);

@@ -1,6 +1,6 @@
 # 0006 — Support (free cheer + Buy Me a Coffee)
 
-**Status:** approved
+**Status:** done        <!-- shipped 2026-07-06, commit babbf50 (+ live GCP infra: cheer-function deploy, Pi upload) -->
 **Date:** 2026-07-05 (last revised 2026-07-06)
 
 > **Revision note:** the design changed significantly during implementation.
@@ -94,7 +94,11 @@ hook for LinkedIn content.
   - Per-browser softening via `localStorage`: after cheering once, the
     button is replaced with "Thanks for the support! 🎉" (not a security
     control — just avoids the "why did my click do nothing new" confusion).
-    Clearing storage resets it.
+    **Expires at the start of each calendar month** (the stored value is the
+    month cheered in, e.g. `"2026-07"`, compared against the current month —
+    not just a bare flag), matching the monthly counter it softens the UI
+    around, so a returning visitor next month can cheer again. Clearing
+    storage resets it early.
 - CORS configuration for the Cloud Function.
 
 ## Out of scope
@@ -129,16 +133,21 @@ hook for LinkedIn content.
       cheer log and publishes `cheers_aggregations.json` — verified by
       running it directly against production: 3 real cheers in
       `cheers/2026-07.json` → `{"month": "2026-07", "count": 3}`.
-- [ ] Two near-simultaneous cheer submissions both land in `cheers/<YYYY-MM>.json`
-      (no lost writes) — deployed with `--max-instances=1 --concurrency=1` as
-      specified, not yet load-tested.
-- [ ] After cheering once in a browser, the button shows "Thanks for the
+- [x] Two near-simultaneous cheer submissions both land in `cheers/<YYYY-MM>.json`
+      (no lost writes) — user-tested 2026-07-06, confirmed working.
+- [x] After cheering once in a browser, the button shows "Thanks for the
       support! 🎉" and re-cheering is blocked client-side until
-      `localStorage` is cleared.
-- [ ] `run_intraday()` on the actual Raspberry Pi cron picks up
+      `localStorage` is cleared, or the calendar month rolls over —
+      user-tested 2026-07-06, confirmed working. (The monthly-expiry fix
+      landed after the initial user test: the original version stored a bare
+      `"true"` flag with no expiry at all, which would have permanently
+      blocked repeat monthly visitors — caught before shipping further.)
+- [x] `run_intraday()` on the actual Raspberry Pi cron picks up
       `update_cheer_aggregations()` and keeps `cheers_aggregations.json`
-      fresh hourly in real operation (only run manually so far, not yet
-      confirmed via the real Pi cron schedule).
+      fresh hourly in real operation — confirmed 2026-07-06 10:00 CEST: a
+      fully automatic (not manually triggered) cron tick uploaded
+      `today.json`, `activities.json`, and `cheers_aggregations.json`
+      together (`{"month": "2026-07", "count": 10}`).
 
 ## Deployment steps
 - [x] **Frontend** — push to `main` → GitHub Actions auto-builds & deploys to
@@ -162,14 +171,11 @@ hook for LinkedIn content.
       `lib/cheerApi.js` — without it, `npm run dev` would POST real cheers to
       production on every test click. Only production builds hit the live
       function; local dev still uses the mock.
-- [ ] **Production server (RasPi)** — ⚠️ NOT automatic: `python-backend/main.py`
-      changed (`update_cheer_aggregations()` + the `GCP_CHEERS_AGG_BLOB_NAME`
-      constant, called from `run_intraday()`). Needs the usual manual repo
-      upload to the Pi before the hourly cron picks up the new behavior in
-      real operation. Tested so far only by running the function directly
-      against production from a dev machine (`poetry run python -c
-      "from main import update_cheer_aggregations; update_cheer_aggregations()"`)
-      — confirmed it correctly published `{"month": "2026-07", "count": 3}`.
+- [x] **Production server (RasPi)** — `python-backend/main.py` (with
+      `update_cheer_aggregations()` + `GCP_CHEERS_AGG_BLOB_NAME`) uploaded to
+      the Pi 2026-07-06 (diffed, backed up the old version, `scp`'d, confirmed
+      it imports cleanly in the Pi's own poetry env). Since confirmed running
+      for real via the actual hourly cron — see acceptance criteria above.
 - [x] **GCS schema** — new objects only; no existing keys (`data.json`,
       `aggregations.json`) touched, so `Heatmap.jsx`/`Aggregations.jsx` need
       no changes.

@@ -10,16 +10,26 @@ a small React dashboard. It doubles as content for Eric's YouTube channel.
 ```
 Raspberry Pi (cron)                 GCS bucket "wandern-eric-data"        GitHub Pages
 python-backend/main.py  ──upload──▶  data.json + aggregations.json  ──fetch──▶  wandern-eric/ (React)
-   (Fitbit API)                          (public, read-only)                    wandern-eric.de
+   (Google Health API)                   (public, read-only)                    wandern-eric.de
+
+cheer-function/ (GCP Cloud Function) ──append──▶  cheers/<YYYY-MM>.json  ─┘
+   POST /cheer, called directly by the frontend        (same bucket)
 ```
 
-1. `python-backend/main.py` fetches *yesterday's* steps from the Fitbit API,
-   appends to `data.json`, recomputes `aggregations.json` (Pandas), and uploads
-   both to the GCS bucket.
-2. The frontend fetches those two JSON files directly from
-   `https://storage.googleapis.com/wandern-eric-data/{data,aggregations}.json`
-   — there is **no API server**. The bucket is public and the only contract
-   between backend and frontend.
+1. `python-backend/main.py` fetches *yesterday's* steps from the Google
+   Health API, appends to `data.json`, recomputes `aggregations.json`
+   (Pandas), and uploads both to the GCS bucket.
+2. The frontend fetches those JSON files directly from
+   `https://storage.googleapis.com/wandern-eric-data/...` — most of the
+   dashboard has **no API server**, the bucket is the only contract between
+   backend and frontend.
+3. **Exception:** the Support feature's free "cheer" button (`specs/0006`)
+   does have a real, writable API server — `cheer-function/`, a public GCP
+   Cloud Function (`POST /cheer`) the frontend calls directly, which
+   geolocates the request (country only, raw IP never persisted) and appends
+   to the bucket. `python-backend/main.py` separately counts those into
+   `cheers_aggregations.json` on its hourly run. See
+   `specs/0006-cheer-button.md` and `cheer-function/README.md`.
 
 ## Repo layout
 
@@ -29,7 +39,9 @@ python-backend/main.py  ──upload──▶  data.json + aggregations.json  �
   the evolution of the frontend. Near-identical to `wandern-eric/`. NOT
   deployed, NOT git-tracked. Don't treat it as production; changes here are for
   video content only.
-- `python-backend/` — Fitbit extraction + aggregation (Poetry, Python 3.12).
+- `python-backend/` — Google Health extraction + aggregation (Poetry, Python 3.12).
+- `cheer-function/` — the `POST /cheer` GCP Cloud Function (specs/0006). Deployed
+  manually (`cheer-function/README.md`), not part of any CI pipeline.
 - `.github/workflows/deploy.yml` — builds **only** `wandern-eric/` and deploys
   `wandern-eric/dist` to GitHub Pages on push to `main`.
 
@@ -77,10 +89,8 @@ a **spec** in `specs/` — agreed *before* code is written. See `specs/README.md
 
 ## Backend details
 
-- Config is via `python-backend/.env` (see `.env-example`). Fitbit OAuth2
-  client id/secret, redirect URI, GCP project/bucket.
-- Fitbit OAuth tokens persist in `token.json`; `main.py` auto-refreshes expired
-  access tokens (`FitbitController`).
+- Config is via `python-backend/.env` (see `.env-example`): GCP project/bucket,
+  path to the service-account key. Google Health OAuth is separate — see below.
 - `calculate_aggregations()` produces: `max_steps`, `max_avg_dow`,
   `avg_per_month`, `avg_last_3_months`, and `prev_month_avg_to_eom_projection`
   (steps/day still needed to match last month's average). The frontend
@@ -105,7 +115,19 @@ Pi runs the Google Health code. See `specs/0001-google-health-migration.md`.
   from the hourly intraday run.
 - OAuth: token persists in `secrets/token_health.json`; `AuthorizedSession`
   auto-refreshes per request. First OAuth needs a browser, then copy the token to
-  the Pi (Google refresh tokens don't single-use-rotate like Fitbit's did).
+  the Pi.
+- ⚠️ **Never run `GoogleHealthController` (or any Google Health API call) from
+  a local dev machine** — only via SSH on the Raspberry Pi (`ssh wandern-pi`),
+  even for read-only/exploratory queries. Matching credentials exist locally
+  in `python-backend/secrets/` too, but using them from a second machine risks
+  breaking the token the Pi's cron jobs depend on.
+- ⚠️ Known failure mode: the Health API token can expire or get revoked
+  (`google.auth.exceptions.RefreshError: invalid_grant: Token has been
+  expired or revoked`), silently crashing both `run_daily()` and
+  `run_intraday()` with no alerting — check `cron.log`/`intraday.log` on the
+  Pi if the dashboard looks frozen or the numbers look wrong, before assuming
+  it's a data-accuracy problem. Fix: redo the browser OAuth flow, copy the
+  fresh token to the Pi.
 - ⚠️ **Dead ends — do NOT build on these:** `google_health_example.py` and
   `gh_migration.ipynb` use the **Google Fit REST API** (`fitness/v1`), **shut down
   end of 2026**. "Health Connect" is Android, **on-device only (no cloud API)** —
