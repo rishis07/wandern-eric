@@ -7,6 +7,9 @@ const CONTACT = {
     city: "35410 Hungen",
     country: "Deutschland",
     email: "risheric@gmail.com",
+    // Number serviced by Dein Impressum; they require listing at least two
+    // contact methods (email & phone).
+    phone: "0157 9234 1658",
 };
 
 export default function Impressum() {
@@ -34,7 +37,11 @@ export default function Impressum() {
             </p>
 
             <h3 className="mt-6 font-semibold text-gray-900">Kontakt</h3>
-            <p className="mt-2 text-gray-700">E-Mail: {CONTACT.email}</p>
+            <p className="mt-2 text-gray-700">
+                E-Mail: {CONTACT.email}
+                <br />
+                Tel.: {CONTACT.phone}
+            </p>
 
             <h3 className="mt-6 font-semibold text-gray-900">
                 Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV
