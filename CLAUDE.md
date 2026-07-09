@@ -147,6 +147,20 @@ Still: there is **no root `.gitignore`**, so don't run a blanket `git add .` /
 `git add -A` from the repo root without checking what it stages. Never `git add`
 a secret, and never print their contents.
 
+## Legal pages (Impressum / Datenschutz)
+
+- `src/components/Impressum.jsx` and `src/components/Datenschutz.jsx` render at
+  `#/impressum` / `#/datenschutz` (hash routing in `App.jsx` — no router lib,
+  GitHub Pages only serves index.html). Footer links live in `App.jsx`.
+- ⚠️ **The Datenschutzerklärung must ALWAYS be kept in sync with what the site
+  actually does.** Any change that touches visitor data — a request to a new
+  host, a new cookie/localStorage key, new logging, a new endpoint the frontend
+  calls — requires updating `Datenschutz.jsx` in the same change. The spec
+  template has a "Visitor data flows" checkbox and a Datenschutz deployment
+  step for this; don't skip them.
+- The Impressum address is a rented ladungsfähige Anschrift (Dein Impressum);
+  contact data lives in the `CONTACT` const of each page.
+
 ## Conventions / gotchas
 
 - The frontend reads from a hard-coded GCS URL; if the bucket name changes,

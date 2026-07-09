@@ -9,6 +9,7 @@
 - [ ] Backend logic       (python-backend/)
 - [ ] GCS data schema     (data.json / aggregations.json keys)
 - [ ] Production server   (RasPi — cron schedule, env, deploy)
+- [ ] Visitor data flows  (new/changed processing of visitor data → Datenschutzerklärung)
 
 ## Why
 The problem or motivation in 1–3 sentences.
@@ -35,6 +36,7 @@ The exact, checkable interface this change commits to:
 - [ ] **Frontend** — push to `main` → GitHub Actions auto-builds & deploys to GitHub Pages / wandern-eric.de
 - [ ] **Production server (RasPi)** — ⚠️ NOT automatic: manually upload repo to the Pi; update crontab / env as needed; confirm the new schedule runs
 - [ ] **GCS schema** — frontend reads exact keys; if keys changed, update `Heatmap.jsx` / `Aggregations.jsx` in the same change
+- [ ] **Datenschutz** — ⚠️ if the change touches visitor data in any way (requests to new hosts, cookies/localStorage, logging, new endpoints), update `Datenschutz.jsx` in the same change
 - [ ] Update `Changelog.jsx` (user-facing changes)
 
 ## Open questions
