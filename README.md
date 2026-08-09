@@ -120,7 +120,16 @@ credentials, no Google Health API) and complains when:
 - `data.json` has no record for yesterday (the daily job never landed), or
 - `today.json` is older than yesterday (the hourly job has stopped).
 
-On failure it sends a Telegram message and exits 1. Verify the wiring with:
+On failure it sends a Telegram message and exits 1. The message states only what
+was observed and attaches the tail of `cron.log` and `intraday.log`, with their
+last-modified times, so the actual traceback arrives with the alert. It offers no
+theory about the cause: stale data in a bucket is equally consistent with a dead
+token, a network fault, a GCS problem, or a bug, and the log tail settles it.
+
+The tails go out as Telegram `<pre>` blocks so they render monospace. If Telegram
+ever rejects the markup, the alert is resent unformatted rather than dropped.
+
+Verify the wiring with:
 
 ```
 poetry run python watchdog.py --test-alert
