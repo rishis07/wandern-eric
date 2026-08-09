@@ -22,10 +22,13 @@ from dotenv import load_dotenv
 import datetime
 import argparse
 import os
+import re
 import sys
 import requests
 
-load_dotenv(Path(__file__).parent / ".env")
+ROOT_DIR = Path(__file__).parent
+
+load_dotenv(ROOT_DIR / ".env")
 
 GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
 PUBLIC_BUCKET_BASE_URL = "https://storage.googleapis.com"
@@ -38,6 +41,19 @@ HTTP_TIMEOUT_SECONDS = 20
 # today.json is refreshed hourly between 08:00 and 23:00. Anything older than
 # yesterday means the intraday job has been down for at least a full day.
 TODAY_JSON_MAX_AGE_DAYS = 1
+
+# Cron logs to attach to an alert, so the actual error travels with the message
+# instead of the message telling you to go read a file.
+LOG_FILES = [ROOT_DIR / "cron.log", ROOT_DIR / "intraday.log"]
+LOG_TAIL_LINES = 12
+# Read at most this much from the end of a log; intraday.log grows unbounded.
+LOG_TAIL_MAX_BYTES = 64 * 1024
+# Telegram rejects messages over 4096 characters.
+TELEGRAM_MAX_CHARS = 4096
+# Telegram guesses a language for an unlabelled <pre> block and syntax-highlights
+# it, so a traceback in cron.log renders as coloured Python while intraday.log
+# stays grey. Naming the language keeps every log block uniformly plain.
+LOG_CODE_LANGUAGE = "plaintext"
 
 
 def public_url(blob_name):
@@ -125,37 +141,143 @@ def run_checks(today=None):
     return problems
 
 
-def send_telegram(text):
-    """Post a message via the Telegram bot API. Returns True when it went out."""
+def _post_message(text, parse_mode=None):
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    return requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        json=payload,
+        timeout=HTTP_TIMEOUT_SECONDS,
+    )
+
+
+def send_telegram(text, plain_fallback=None):
+    """Post a message via the Telegram bot API. Returns True when it went out.
+
+    Sent with parse_mode=HTML so the log tails render as monospace blocks. If
+    Telegram rejects the markup, the alert is retried unformatted: an alert that
+    arrives ugly beats an alert that never arrives.
+    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print(
             "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set in .env, "
             "alert not sent, printing instead:"
         )
-        print(text)
+        print(plain_fallback or text)
         return False
 
-    response = requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-        json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
-        timeout=HTTP_TIMEOUT_SECONDS,
-    )
-    if response.status_code != 200:
-        # Never raise: a broken alert channel must not hide the failure it reports.
-        print(f"Telegram send failed: {response.status_code} - {response.text}")
+    response = _post_message(text, parse_mode="HTML")
+    if response.status_code == 200:
+        return True
+
+    # Never raise: a broken alert channel must not hide the failure it reports.
+    print(f"Telegram send failed: {response.status_code} - {response.text}")
+
+    if plain_fallback is None:
+        return False
+
+    print("Retrying without formatting.")
+    retry = _post_message(plain_fallback)
+    if retry.status_code != 200:
+        print(f"Plain retry failed too: {retry.status_code} - {retry.text}")
         return False
     return True
 
 
-def format_alert(problems, today):
+def tail(path, n_lines=LOG_TAIL_LINES):
+    """Last n_lines of a log file, or None if it isn't there.
+
+    Only the final LOG_TAIL_MAX_BYTES are read: intraday.log grows without bound
+    and a crash puts the useful part (the exception) at the very end anyway.
+    """
+    if not path.exists():
+        return None
+
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - LOG_TAIL_MAX_BYTES))
+        chunk = f.read()
+
+    lines = chunk.decode("utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-n_lines:])
+
+
+def collect_logs():
+    """(name, last-modified, tail) for each cron log that exists.
+
+    The modification time is part of the diagnosis: a log that stopped being
+    written says something different from a log full of tracebacks.
+    """
+    collected = []
+    for path in LOG_FILES:
+        text = tail(path)
+        if text is None:
+            continue
+        mtime = datetime.datetime.fromtimestamp(path.stat().st_mtime)
+        collected.append((path.name, mtime.strftime("%Y-%m-%d %H:%M"), text))
+    return collected
+
+
+def _escape_html(text):
+    """Escape the three characters Telegram's HTML parse mode cares about."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _trim(text, limit):
+    """Cut to limit, then drop a half-written HTML entity left at the end.
+
+    `&amp;` sliced into `&am` would make Telegram reject the whole message.
+    """
+    return re.sub(r"&[a-zA-Z]{0,5}$", "", text[:limit])
+
+
+def format_alert(problems, today, logs=None, html=False):
+    """Build the alert. States what was observed and attaches the logs, nothing more.
+
+    Deliberately offers no theory about the cause: the watchdog sees stale data
+    in a bucket, which is consistent with an expired token, a dead network, a
+    GCS problem, or a bug. The log tail lets the reader decide.
+
+    With html=True the log tails are wrapped in a language-tagged <pre><code> so
+    Telegram renders them as plain monospace blocks. Truncation happens per log
+    section rather than on the finished string, so the block always gets closed
+    and the problem lines are never the part that gets cut.
+    """
+    escape = _escape_html if html else (lambda s: s)
+    marker = "\n[truncated]"
+
     lines = [f"⚠️ Wandern Eric watchdog ({today}):", ""]
-    lines += [f"• {p}" for p in problems]
-    lines += [
-        "",
-        "Most likely the Google Health token expired or was revoked.",
-        "Check cron.log / intraday.log on the Pi for RefreshError.",
-    ]
-    return "\n".join(lines)
+    lines += [f"• {escape(p)}" for p in problems]
+    message = "\n".join(lines)
+
+    if len(message) > TELEGRAM_MAX_CHARS:
+        return _trim(message, TELEGRAM_MAX_CHARS - len(marker)) + marker
+
+    opening_tag, closing_tag = (
+        (f'<pre><code class="language-{LOG_CODE_LANGUAGE}">', "</code></pre>")
+        if html
+        else ("", "")
+    )
+
+    for name, mtime, text in logs or []:
+        header = f"\n\n{escape(f'--- {name} (last written {mtime}) ---')}\n"
+        overhead = len(header) + len(opening_tag) + len(closing_tag)
+        room = TELEGRAM_MAX_CHARS - len(message) - overhead
+
+        if room <= len(marker):
+            break
+
+        body = escape(text)
+        if len(body) > room:
+            body = _trim(body, room - len(marker)) + marker
+            message += header + opening_tag + body + closing_tag
+            break
+
+        message += header + opening_tag + body + closing_tag
+
+    return message
 
 
 def main():
@@ -184,9 +306,10 @@ def main():
         print(f"[watchdog] {today} OK: data.json has yesterday, today.json is fresh.")
         return 0
 
-    message = format_alert(problems, today)
-    print(message)
-    send_telegram(message)
+    logs = collect_logs()
+    plain = format_alert(problems, today, logs)
+    print(plain)
+    send_telegram(format_alert(problems, today, logs, html=True), plain_fallback=plain)
     return 1
 
 
