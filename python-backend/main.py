@@ -1,5 +1,6 @@
 from google.cloud import storage
 from google.auth.transport.requests import AuthorizedSession, Request
+from google.auth.exceptions import RefreshError
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
 from pathlib import Path
@@ -34,7 +35,9 @@ ACTIVITIES_TO_SHOW = 3
 
 # Google Health API config (server-to-server successor to the Fitbit Web API)
 HEALTH_BASE_URL = "https://health.googleapis.com/v4"
-HEALTH_SCOPES = ["https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly"]
+HEALTH_SCOPES = [
+    "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly"
+]
 HEALTH_CLIENT_SECRET_PATH = ROOT_DIR / "secrets/client_secret_health.json"
 HEALTH_TOKEN_PATH = ROOT_DIR / "secrets/token_health.json"
 
@@ -55,7 +58,9 @@ def get_file_from_gcp(bucket_name, blob_name):
 
 
 # GCP logic
-def upload_file_to_gcp(bucket_name, destination_blob_name, local_path, cache_control=None):
+def upload_file_to_gcp(
+    bucket_name, destination_blob_name, local_path, cache_control=None
+):
     if NO_UPLOAD:
         print(
             f"[no-upload] Skipping GCS upload of {local_path} → "
@@ -259,6 +264,112 @@ def consolidate_activities(points):
     return consolidated
 
 
+class HealthAuthError(RuntimeError):
+    """The stored Google Health token is unusable and cannot be refreshed.
+
+    Raised instead of falling back to the browser OAuth flow, which would hang
+    forever on the headless Raspberry Pi.
+    """
+
+
+REAUTH_HINT = (
+    "Re-run the OAuth flow on a machine with a browser:\n"
+    "    poetry run python main.py --auth\n"
+    "then copy secrets/token_health.json to the Pi. If this starts happening every\n"
+    "few days again, check that the OAuth consent screen is still published\n"
+    "('In production'). Apps in 'Testing' status get refresh tokens that expire\n"
+    "after 7 days."
+)
+
+
+def _parse_expiry(value):
+    """Stored ISO expiry -> naive UTC datetime (what google-auth expects)."""
+    if not value:
+        return None
+    expiry = datetime.datetime.fromisoformat(value)
+    if expiry.tzinfo is not None:
+        expiry = expiry.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    return expiry
+
+
+def save_health_token(creds):
+    """Persist credentials to secrets/token_health.json, expiry and scopes included.
+
+    Persisting `expiry` is what makes `creds.expired` meaningful on the next load:
+    google-auth treats credentials with `expiry=None` as never expiring, so an
+    expiry-less token file makes the refresh path unreachable.
+    """
+    token_data = {
+        "token": creds.token,
+        "refresh_token": creds.refresh_token,
+        "token_uri": creds.token_uri,
+        "client_id": creds.client_id,
+        "client_secret": creds.client_secret,
+        "scopes": list(creds.scopes or HEALTH_SCOPES),
+        "expiry": creds.expiry.isoformat() if creds.expiry else None,
+    }
+    HEALTH_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(HEALTH_TOKEN_PATH, "w") as f:
+        json.dump(token_data, f)
+    os.chmod(HEALTH_TOKEN_PATH, 0o600)
+
+
+def load_health_credentials():
+    """Read secrets/token_health.json into Credentials, or None if it doesn't exist."""
+    if not HEALTH_TOKEN_PATH.exists():
+        return None
+
+    with open(HEALTH_TOKEN_PATH) as f:
+        token_data = json.load(f)
+
+    return google.oauth2.credentials.Credentials(
+        token=token_data.get("token"),
+        refresh_token=token_data.get("refresh_token"),
+        token_uri=token_data.get("token_uri"),
+        client_id=token_data.get("client_id"),
+        client_secret=token_data.get("client_secret"),
+        scopes=token_data.get("scopes") or HEALTH_SCOPES,
+        expiry=_parse_expiry(token_data.get("expiry")),
+    )
+
+
+def needs_refresh(creds):
+    """True when the access token has to be refreshed before use.
+
+    An unknown expiry counts as stale: token files written before expiry was
+    persisted carry a long-dead access token that would otherwise burn a 401 on
+    the first request.
+    """
+    return creds.expiry is None or not creds.valid
+
+
+def run_health_oauth_flow():
+    """Interactive browser authorization. Only reached via the `--auth` flag."""
+    flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
+        str(HEALTH_CLIENT_SECRET_PATH), scopes=HEALTH_SCOPES
+    )
+    creds = flow.run_local_server(port=8080)
+    save_health_token(creds)
+    print(f"Authorized. Token written to {HEALTH_TOKEN_PATH}")
+    return creds
+
+
+class PersistingAuthorizedSession(AuthorizedSession):
+    """AuthorizedSession that writes the token back after an in-flight refresh.
+
+    google-auth refreshes on a 401 mid-request; without this the fresh access
+    token (and a rotated refresh token, if Google ever issues one) dies with the
+    process and every run starts from a dead token again.
+    """
+
+    def request(self, *args, **kwargs):
+        before = self.credentials.token
+        response = super().request(*args, **kwargs)
+        if self.credentials.token != before:
+            save_health_token(self.credentials)
+        return response
+
+
 class GoogleHealthController:
     """Reads daily steps from the Google Health API.
 
@@ -269,48 +380,28 @@ class GoogleHealthController:
     def __init__(self):
         self.session = self.__get_session()
 
-    def __save_token(self, creds):
-        token_data = {
-            "token": creds.token,
-            "refresh_token": creds.refresh_token,
-            "token_uri": creds.token_uri,
-            "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
-        }
-        HEALTH_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(HEALTH_TOKEN_PATH, "w") as f:
-            json.dump(token_data, f)
-
     def __get_session(self):
-        creds = None
+        creds = load_health_credentials()
 
-        if HEALTH_TOKEN_PATH.exists():
-            with open(HEALTH_TOKEN_PATH) as f:
-                token_data = json.load(f)
-            creds = google.oauth2.credentials.Credentials(
-                token=token_data.get("token"),
-                refresh_token=token_data.get("refresh_token"),
-                token_uri=token_data.get("token_uri"),
-                client_id=token_data.get("client_id"),
-                client_secret=token_data.get("client_secret"),
-                scopes=HEALTH_SCOPES,
+        if creds is None:
+            raise HealthAuthError(f"No token at {HEALTH_TOKEN_PATH}.\n{REAUTH_HINT}")
+        if not creds.refresh_token:
+            raise HealthAuthError(
+                f"Token at {HEALTH_TOKEN_PATH} has no refresh_token.\n{REAUTH_HINT}"
             )
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                print("Token expired, refreshing...")
+        if needs_refresh(creds):
+            print("Access token stale, refreshing...")
+            try:
                 creds.refresh(Request())
-                print("Token refreshed.")
-            else:
-                # First-time authorization (needs a browser).
-                flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
-                    str(HEALTH_CLIENT_SECRET_PATH), scopes=HEALTH_SCOPES
-                )
-                creds = flow.run_local_server(port=8080)
-            self.__save_token(creds)
+            except RefreshError as e:
+                raise HealthAuthError(
+                    f"Token refresh failed: {e}\n{REAUTH_HINT}"
+                ) from e
+            save_health_token(creds)
+            print("Token refreshed.")
 
-        # AuthorizedSession refreshes the access token automatically per request.
-        return AuthorizedSession(creds)
+        return PersistingAuthorizedSession(creds)
 
     @staticmethod
     def __civil(d):
@@ -332,9 +423,7 @@ class GoogleHealthController:
             "windowSizeDays": 1,
         }
 
-        resp = self.session.post(
-            url, json=body, headers={"Accept": "application/json"}
-        )
+        resp = self.session.post(url, json=body, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             raise ValueError(f"Error fetching data: {resp.status_code} - {resp.text}")
 
@@ -490,7 +579,9 @@ def run_intraday():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Wandern Eric step extractor (Google Health API)")
+    parser = argparse.ArgumentParser(
+        description="Wandern Eric step extractor (Google Health API)"
+    )
     parser.add_argument(
         "--intraday",
         action="store_true",
@@ -503,11 +594,20 @@ if __name__ == "__main__":
         help="Run extraction + aggregation and write the local JSON, but skip all GCS "
         "uploads. For safe testing without touching production data.",
     )
+    parser.add_argument(
+        "--auth",
+        action="store_true",
+        help="Run the interactive Google Health OAuth flow (needs a browser) and write "
+        "secrets/token_health.json, then exit. The only way to reach the browser flow: "
+        "the normal runs fail loudly instead, so a dead token can never hang the Pi.",
+    )
     args = parser.parse_args()
 
     NO_UPLOAD = args.no_upload
 
-    if args.intraday:
+    if args.auth:
+        run_health_oauth_flow()
+    elif args.intraday:
         run_intraday()
     else:
         run_daily()
