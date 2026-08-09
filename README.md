@@ -76,18 +76,24 @@ In `python-backend/`:
 3. Install deps and do the one-time authorization (opens a browser):
    ```
    poetry install
-   poetry run python main.py --intraday --no-upload
+   poetry run python main.py --auth
    ```
    This writes `secrets/token_health.json`, which is reused and auto-refreshed
    afterwards. Your `.env`, `secrets/`, and the generated `*.json` files are all
    gitignored.
+4. **Publish your OAuth consent screen** ("In production" in the Cloud Console).
+   While it sits in "Testing", Google expires every refresh token after 7 days
+   and the backend dies with `invalid_grant: Token has been expired or revoked`
+   every week.
+5. Optional: fill in `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` so the watchdog
+   can alert you when the data stops updating (see below).
 
 ### 2. Server deploy
 
 1. Copy `python-backend/` to the machine (git, `scp`, or `rsync`). Keep your
    `.env`, `secrets/`, and data `*.json` on the machine. If you authorized on a
-   different computer, copy `secrets/token_health.json` over too (the first OAuth
-   needs a browser).
+   different computer, copy `secrets/token_health.json` over too (the OAuth flow
+   needs a browser, so it can't run on a headless box).
 2. `poetry install` on the machine.
 3. Schedule it with cron. Example crontab (adjust the paths):
    ```
@@ -95,10 +101,49 @@ In `python-backend/`:
    0 5 * * *    cd ~/wandern-eric && poetry run python main.py >> cron.log 2>&1
    # publish today's in-progress steps + latest activities, hourly during the day
    0 8-23 * * * cd ~/wandern-eric && poetry run python main.py --intraday >> intraday.log 2>&1
+   # tell me when the published data goes stale
+   0 9 * * *    cd ~/wandern-eric && poetry run python watchdog.py >> watchdog.log 2>&1
    ```
    The daily run (no flag) appends yesterday and is not idempotent, so run it
    once per day (see Known issues). `--no-upload` runs everything but skips the
    GCS writes, handy for testing.
+
+### 2b. Watchdog
+
+`watchdog.py` is the answer to "the dashboard froze and nobody told me". Every
+cron job here depends on one OAuth token, and when that token dies the jobs
+crash inside cron where nothing is watching.
+
+The watchdog reads the **public** bucket over plain HTTPS (no Google
+credentials, no Google Health API) and complains when:
+
+- `data.json` has no record for yesterday (the daily job never landed), or
+- `today.json` is older than yesterday (the hourly job has stopped).
+
+On failure it sends a Telegram message and exits 1. Verify the wiring with:
+
+```
+poetry run python watchdog.py --test-alert
+```
+
+Blind spot worth knowing: it runs on the same machine as the jobs it watches, so
+it can't tell you the machine itself is down. It catches token death, which is
+the failure that actually keeps happening.
+
+### 2c. When the token dies anyway
+
+Symptom: `google.auth.exceptions.RefreshError: invalid_grant: Token has been
+expired or revoked` in `cron.log` / `intraday.log`, and a watchdog alert.
+
+The backend refuses to open a browser on its own (that would just hang a
+headless machine), so recovery is manual and explicit:
+
+```
+poetry run python main.py --auth      # on a machine with a browser
+scp python-backend/secrets/token_health.json <pi>:~/wandern-eric/python-backend/secrets/
+```
+
+If it comes back every ~7 days, the consent screen slipped back to "Testing".
 
 ### 3. Frontend config
 

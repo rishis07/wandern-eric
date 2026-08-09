@@ -40,6 +40,11 @@ cheer-function/ (GCP Cloud Function) ──append──▶  cheers/<YYYY-MM>.jso
   deployed, NOT git-tracked. Don't treat it as production; changes here are for
   video content only.
 - `python-backend/` — Google Health extraction + aggregation (Poetry, Python 3.12).
+  Also holds `watchdog.py`, a separate daily cron job that reads the **public**
+  bucket over plain HTTPS (no Google credentials, no Health API) and sends a
+  Telegram alert when `data.json` is missing yesterday or `today.json` has gone
+  stale. It's the alerting for the silent-token-death failure mode below. Tests
+  live in `python-backend/tests/` (pytest, no network).
 - `cheer-function/` — the `POST /cheer` GCP Cloud Function (specs/0006). Deployed
   manually (`cheer-function/README.md`), not part of any CI pipeline.
 - `.github/workflows/deploy.yml` — builds **only** `wandern-eric/` and deploys
@@ -59,6 +64,9 @@ Backend (run inside `python-backend/`):
 ```bash
 poetry install
 poetry run python main.py    # fetch yesterday + reaggregate + upload to GCS
+poetry run python main.py --auth   # redo the OAuth flow (browser machine only)
+poetry run python watchdog.py      # check published data freshness, alert on Telegram
+poetry run pytest                  # token + watchdog tests (no network, safe locally)
 ```
 
 ## Spec-driven development
@@ -113,9 +121,18 @@ Pi runs the Google Health code. See `specs/0001-google-health-migration.md`.
 - **Activities** (commit `e71b294`, see `specs/0002-activities-module.md`):
   `get_exercise_points()` + `consolidate_activities()` publish `activities.json`
   from the hourly intraday run.
-- OAuth: token persists in `secrets/token_health.json`; `AuthorizedSession`
-  auto-refreshes per request. First OAuth needs a browser, then copy the token to
-  the Pi.
+- OAuth: token persists in `secrets/token_health.json` (`token`, `refresh_token`,
+  `scopes`, `expiry`). `load_health_credentials()` / `save_health_token()` are
+  module-level and tested; `PersistingAuthorizedSession` writes the token back
+  whenever a refresh happens mid-request, so refreshes survive the process.
+  A missing/dead token raises `HealthAuthError`. The browser flow is reachable
+  **only** via `main.py --auth`, never implicitly (an implicit
+  `flow.run_local_server()` would hang the headless Pi forever).
+  ⚠️ Keep `expiry` in the saved token: google-auth treats `expiry=None`
+  credentials as valid forever, which silently disables the whole refresh path.
+- The OAuth consent screen is **published ("In production")**. If it ever drops
+  back to "Testing", Google expires refresh tokens after 7 days and the
+  `invalid_grant` crashes return weekly. Check that first.
 - ⚠️ **Never run `GoogleHealthController` (or any Google Health API call) from
   a local dev machine** — only via SSH on the Raspberry Pi (`ssh wandern-pi`),
   even for read-only/exploratory queries. Matching credentials exist locally
@@ -123,11 +140,11 @@ Pi runs the Google Health code. See `specs/0001-google-health-migration.md`.
   breaking the token the Pi's cron jobs depend on.
 - ⚠️ Known failure mode: the Health API token can expire or get revoked
   (`google.auth.exceptions.RefreshError: invalid_grant: Token has been
-  expired or revoked`), silently crashing both `run_daily()` and
-  `run_intraday()` with no alerting — check `cron.log`/`intraday.log` on the
-  Pi if the dashboard looks frozen or the numbers look wrong, before assuming
-  it's a data-accuracy problem. Fix: redo the browser OAuth flow, copy the
-  fresh token to the Pi.
+  expired or revoked`), crashing both `run_daily()` and `run_intraday()`.
+  check `cron.log`/`intraday.log` on the Pi if the dashboard looks frozen or
+  the numbers look wrong, before assuming it's a data-accuracy problem. Fix:
+  `main.py --auth` on a browser machine, copy `secrets/token_health.json` to
+  the Pi. `watchdog.py` now alerts on this instead of it going unnoticed.
 - ⚠️ **Dead ends — do NOT build on these:** `google_health_example.py` and
   `gh_migration.ipynb` use the **Google Fit REST API** (`fitness/v1`), **shut down
   end of 2026**. "Health Connect" is Android, **on-device only (no cloud API)** —

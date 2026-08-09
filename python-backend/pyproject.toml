@@ -19,6 +19,12 @@ google-auth-oauthlib = "^1.3.1"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.1.1"
+pytest = "^8.4.2"
+
+[tool.pytest.ini_options]
+# tests/ import main.py and watchdog.py, which sit in this directory
+pythonpath = ["."]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["poetry-core"]
